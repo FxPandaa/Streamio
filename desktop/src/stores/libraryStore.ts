@@ -1,0 +1,508 @@
+import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
+import { useAuthStore } from "./authStore";
+
+export interface LibraryItem {
+  id: string;
+  imdbId: string;
+  tmdbId?: number;
+  type: "movie" | "series";
+  title: string;
+  year: number;
+  poster?: string;
+  backdrop?: string;
+  rating?: number;
+  addedAt: string;
+  // New fields
+  genres?: string[];
+  runtime?: number;
+  isFavorite?: boolean;
+  watchlist?: boolean;
+  userRating?: number; // 1-10
+  notes?: string;
+  tags?: string[];
+}
+
+export interface WatchHistoryItem {
+  id: string;
+  imdbId: string;
+  type: "movie" | "series";
+  title: string;
+  poster?: string;
+  season?: number;
+  episode?: number;
+  episodeTitle?: string;
+  progress: number; // 0-100
+  duration: number; // in seconds
+  watchedAt: string;
+  // Saved playback preferences
+  currentTime?: number; // Resume position in seconds
+  subtitleId?: string; // Selected subtitle ID
+  subtitleOffset?: number; // Subtitle sync offset
+  audioTrackId?: string; // Selected audio track ID
+  // Saved torrent source
+  torrentInfoHash?: string; // Torrent info hash to restore same source
+  torrentTitle?: string; // Torrent title for reference
+  torrentQuality?: string; // Quality (1080p, 720p, etc)
+  torrentProvider?: string; // Provider (torrentio, yts, etc)
+}
+
+export interface LibraryCollection {
+  id: string;
+  name: string;
+  description?: string;
+  items: string[]; // Array of imdbIds
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type LibraryFilter =
+  | "all"
+  | "movies"
+  | "series"
+  | "favorites"
+  | "watchlist";
+export type LibrarySortBy = "recent" | "title" | "year" | "rating" | "runtime";
+
+interface LibraryState {
+  library: LibraryItem[];
+  watchHistory: WatchHistoryItem[];
+  collections: LibraryCollection[];
+  isLoading: boolean;
+  isSyncing: boolean;
+  lastSyncAt: string | null;
+
+  // Filter/Sort state
+  activeFilter: LibraryFilter;
+  sortBy: LibrarySortBy;
+  searchQuery: string;
+
+  // Actions
+  addToLibrary: (item: Omit<LibraryItem, "id" | "addedAt">) => void;
+  removeFromLibrary: (imdbId: string) => void;
+  isInLibrary: (imdbId: string) => boolean;
+  toggleFavorite: (imdbId: string) => void;
+  toggleWatchlist: (imdbId: string) => void;
+  setUserRating: (imdbId: string, rating: number) => void;
+  updateNotes: (imdbId: string, notes: string) => void;
+  addTag: (imdbId: string, tag: string) => void;
+  removeTag: (imdbId: string, tag: string) => void;
+
+  updateWatchProgress: (
+    item: Omit<WatchHistoryItem, "id" | "watchedAt">,
+  ) => void;
+  getWatchProgress: (
+    imdbId: string,
+    season?: number,
+    episode?: number,
+  ) => WatchHistoryItem | undefined;
+  clearWatchHistory: () => void;
+  removeFromHistory: (id: string) => void;
+
+  // Collections
+  createCollection: (name: string, description?: string) => string;
+  deleteCollection: (id: string) => void;
+  addToCollection: (collectionId: string, imdbId: string) => void;
+  removeFromCollection: (collectionId: string, imdbId: string) => void;
+  renameCollection: (id: string, name: string) => void;
+
+  // Filter/Sort
+  setFilter: (filter: LibraryFilter) => void;
+  setSortBy: (sortBy: LibrarySortBy) => void;
+  setSearchQuery: (query: string) => void;
+  getFilteredLibrary: () => LibraryItem[];
+
+  syncWithServer: () => Promise<void>;
+  loadFromServer: () => Promise<void>;
+}
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+
+export const useLibraryStore = create<LibraryState>()(
+  persist(
+    (set, get) => ({
+      library: [],
+      watchHistory: [],
+      collections: [],
+      isLoading: false,
+      isSyncing: false,
+      lastSyncAt: null,
+      activeFilter: "all",
+      sortBy: "recent",
+      searchQuery: "",
+
+      addToLibrary: (item) => {
+        const newItem: LibraryItem = {
+          ...item,
+          id: crypto.randomUUID(),
+          addedAt: new Date().toISOString(),
+          isFavorite: false,
+          watchlist: false,
+          tags: [],
+        };
+
+        set((state) => ({
+          library: [newItem, ...state.library],
+        }));
+
+        // Sync in background
+        get().syncWithServer();
+      },
+
+      removeFromLibrary: (imdbId: string) => {
+        set((state) => ({
+          library: state.library.filter((item) => item.imdbId !== imdbId),
+          // Also remove from all collections
+          collections: state.collections.map((col) => ({
+            ...col,
+            items: col.items.filter((id) => id !== imdbId),
+          })),
+        }));
+
+        // Sync in background
+        get().syncWithServer();
+      },
+
+      isInLibrary: (imdbId: string) => {
+        return get().library.some((item) => item.imdbId === imdbId);
+      },
+
+      toggleFavorite: (imdbId: string) => {
+        set((state) => ({
+          library: state.library.map((item) =>
+            item.imdbId === imdbId
+              ? { ...item, isFavorite: !item.isFavorite }
+              : item,
+          ),
+        }));
+        get().syncWithServer();
+      },
+
+      toggleWatchlist: (imdbId: string) => {
+        set((state) => ({
+          library: state.library.map((item) =>
+            item.imdbId === imdbId
+              ? { ...item, watchlist: !item.watchlist }
+              : item,
+          ),
+        }));
+        get().syncWithServer();
+      },
+
+      setUserRating: (imdbId: string, rating: number) => {
+        set((state) => ({
+          library: state.library.map((item) =>
+            item.imdbId === imdbId
+              ? { ...item, userRating: Math.max(1, Math.min(10, rating)) }
+              : item,
+          ),
+        }));
+        get().syncWithServer();
+      },
+
+      updateNotes: (imdbId: string, notes: string) => {
+        set((state) => ({
+          library: state.library.map((item) =>
+            item.imdbId === imdbId ? { ...item, notes } : item,
+          ),
+        }));
+        get().syncWithServer();
+      },
+
+      addTag: (imdbId: string, tag: string) => {
+        set((state) => ({
+          library: state.library.map((item) =>
+            item.imdbId === imdbId
+              ? { ...item, tags: [...(item.tags || []), tag] }
+              : item,
+          ),
+        }));
+        get().syncWithServer();
+      },
+
+      removeTag: (imdbId: string, tag: string) => {
+        set((state) => ({
+          library: state.library.map((item) =>
+            item.imdbId === imdbId
+              ? { ...item, tags: (item.tags || []).filter((t) => t !== tag) }
+              : item,
+          ),
+        }));
+        get().syncWithServer();
+      },
+
+      updateWatchProgress: (item) => {
+        const newItem: WatchHistoryItem = {
+          ...item,
+          id: crypto.randomUUID(),
+          watchedAt: new Date().toISOString(),
+        };
+
+        set((state) => {
+          // Remove existing entry for the same specific content
+          // For series: only remove the entry for this specific episode
+          // For movies: remove the existing movie entry
+          const filtered = state.watchHistory.filter((h) => {
+            if (h.imdbId !== item.imdbId) return true;
+            if (item.type === "series") {
+              // For series, only remove if it's the same episode
+              return h.season !== item.season || h.episode !== item.episode;
+            }
+            // For movies, remove the existing entry
+            return false;
+          });
+
+          return {
+            watchHistory: [newItem, ...filtered].slice(0, 100), // Keep last 100
+          };
+        });
+
+        // Sync in background
+        get().syncWithServer();
+      },
+
+      getWatchProgress: (imdbId: string, season?: number, episode?: number) => {
+        return get().watchHistory.find((h) => {
+          if (h.imdbId !== imdbId) return false;
+          if (season !== undefined && episode !== undefined) {
+            return h.season === season && h.episode === episode;
+          }
+          return true;
+        });
+      },
+
+      clearWatchHistory: () => {
+        set({ watchHistory: [] });
+        get().syncWithServer();
+      },
+
+      removeFromHistory: (id: string) => {
+        set((state) => ({
+          watchHistory: state.watchHistory.filter((item) => item.id !== id),
+        }));
+        get().syncWithServer();
+      },
+
+      // Collections
+      createCollection: (name: string, description?: string) => {
+        const newCollection: LibraryCollection = {
+          id: crypto.randomUUID(),
+          name,
+          description,
+          items: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        set((state) => ({
+          collections: [...state.collections, newCollection],
+        }));
+
+        get().syncWithServer();
+        return newCollection.id;
+      },
+
+      deleteCollection: (id: string) => {
+        set((state) => ({
+          collections: state.collections.filter((col) => col.id !== id),
+        }));
+        get().syncWithServer();
+      },
+
+      addToCollection: (collectionId: string, imdbId: string) => {
+        set((state) => ({
+          collections: state.collections.map((col) =>
+            col.id === collectionId && !col.items.includes(imdbId)
+              ? { ...col, items: [...col.items, imdbId] }
+              : col,
+          ),
+        }));
+        get().syncWithServer();
+      },
+
+      removeFromCollection: (collectionId: string, imdbId: string) => {
+        set((state) => ({
+          collections: state.collections.map((col) =>
+            col.id === collectionId
+              ? { ...col, items: col.items.filter((id) => id !== imdbId) }
+              : col,
+          ),
+        }));
+        get().syncWithServer();
+      },
+
+      renameCollection: (id: string, name: string) => {
+        set((state) => ({
+          collections: state.collections.map((col) =>
+            col.id === id ? { ...col, name } : col,
+          ),
+        }));
+        get().syncWithServer();
+      },
+
+      // Filter/Sort
+      setFilter: (filter: LibraryFilter) => {
+        set({ activeFilter: filter });
+      },
+
+      setSortBy: (sortBy: LibrarySortBy) => {
+        set({ sortBy });
+      },
+
+      setSearchQuery: (query: string) => {
+        set({ searchQuery: query });
+      },
+
+      getFilteredLibrary: () => {
+        const { library, activeFilter, sortBy, searchQuery } = get();
+        let filtered = [...library];
+
+        // Apply filter
+        switch (activeFilter) {
+          case "movies":
+            filtered = filtered.filter((item) => item.type === "movie");
+            break;
+          case "series":
+            filtered = filtered.filter((item) => item.type === "series");
+            break;
+          case "favorites":
+            filtered = filtered.filter((item) => item.isFavorite);
+            break;
+          case "watchlist":
+            filtered = filtered.filter((item) => item.watchlist);
+            break;
+          case "all":
+          default:
+            break;
+        }
+
+        // Apply search
+        if (searchQuery.trim()) {
+          const query = searchQuery.toLowerCase();
+          filtered = filtered.filter(
+            (item) =>
+              item.title.toLowerCase().includes(query) ||
+              item.genres?.some((g) => g.toLowerCase().includes(query)) ||
+              item.tags?.some((t) => t.toLowerCase().includes(query)),
+          );
+        }
+
+        // Apply sort
+        switch (sortBy) {
+          case "recent":
+            filtered.sort(
+              (a, b) =>
+                new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime(),
+            );
+            break;
+          case "title":
+            filtered.sort((a, b) => a.title.localeCompare(b.title));
+            break;
+          case "rating":
+            filtered.sort((a, b) => {
+              const ratingA = a.userRating || a.rating || 0;
+              const ratingB = b.userRating || b.rating || 0;
+              return ratingB - ratingA;
+            });
+            break;
+          case "year":
+            filtered.sort((a, b) => (b.year || 0) - (a.year || 0));
+            break;
+          case "runtime":
+            filtered.sort((a, b) => (b.runtime || 0) - (a.runtime || 0));
+            break;
+        }
+
+        return filtered;
+      },
+
+      syncWithServer: async () => {
+        const authState = useAuthStore.getState();
+        if (!authState.isAuthenticated || !authState.token) return;
+
+        const state = get();
+        if (state.isSyncing) return;
+
+        set({ isSyncing: true });
+
+        try {
+          // Use the new sync endpoints
+          await fetch(`${API_URL}/sync/library`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${authState.token}`,
+            },
+            body: JSON.stringify({ library: state.library }),
+          });
+
+          await fetch(`${API_URL}/sync/history`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${authState.token}`,
+            },
+            body: JSON.stringify({ history: state.watchHistory }),
+          });
+
+          await fetch(`${API_URL}/sync/collections`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${authState.token}`,
+            },
+            body: JSON.stringify({ collections: state.collections }),
+          });
+
+          set({ lastSyncAt: new Date().toISOString() });
+        } catch (error) {
+          console.error("Failed to sync with server:", error);
+        } finally {
+          set({ isSyncing: false });
+        }
+      },
+
+      loadFromServer: async () => {
+        const authState = useAuthStore.getState();
+        if (!authState.isAuthenticated || !authState.token) return;
+
+        set({ isLoading: true });
+
+        try {
+          // Use the new sync/all endpoint to load everything at once
+          const res = await fetch(`${API_URL}/sync/all`, {
+            headers: {
+              Authorization: `Bearer ${authState.token}`,
+            },
+          });
+
+          if (res.ok) {
+            const { data } = await res.json();
+            set({
+              library: data.library || [],
+              watchHistory: data.history || [],
+              collections: data.collections || [],
+              lastSyncAt: new Date().toISOString(),
+            });
+          }
+        } catch (error) {
+          console.error("Failed to load from server:", error);
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+    }),
+    {
+      name: "streamio-library",
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        library: state.library,
+        watchHistory: state.watchHistory,
+        collections: state.collections,
+        activeFilter: state.activeFilter,
+        sortBy: state.sortBy,
+        lastSyncAt: state.lastSyncAt,
+      }),
+    },
+  ),
+);

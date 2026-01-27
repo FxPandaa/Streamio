@@ -1,0 +1,692 @@
+/**
+ * Embedded MPV Service using tauri-plugin-libmpv
+ *
+ * This service provides true embedded MPV playback within the Tauri window
+ * with full audio/subtitle track control via libmpv.
+ */
+import {
+  init,
+  destroy,
+  command,
+  setProperty,
+  getProperty,
+  observeProperties,
+  setVideoMarginRatio,
+  type MpvConfig,
+  type MpvObservableProperty,
+} from "tauri-plugin-libmpv-api";
+
+// Properties we want to observe from MPV with their types
+// Format: [property-name, type, optional 'none' if can be null]
+const OBSERVED_PROPERTIES = [
+  ["pause", "flag"],
+  ["time-pos", "double", "none"],
+  ["duration", "double", "none"],
+  ["volume", "double"],
+  ["mute", "flag"],
+  ["aid", "int64", "none"],
+  ["sid", "int64", "none"],
+  ["filename", "string", "none"],
+  ["eof-reached", "flag"],
+] as const satisfies MpvObservableProperty[];
+
+export interface AudioTrack {
+  id: number;
+  title: string | null;
+  lang: string | null;
+  codec: string | null;
+  channels: number | null;
+  selected: boolean;
+}
+
+export interface SubtitleTrack {
+  id: number;
+  title: string | null;
+  lang: string | null;
+  codec: string | null;
+  external: boolean;
+  selected: boolean;
+}
+
+export interface EmbeddedPlayerState {
+  isPlaying: boolean;
+  isPaused: boolean;
+  position: number;
+  duration: number;
+  volume: number;
+  muted: boolean;
+  audioTracks: AudioTrack[];
+  subtitleTracks: SubtitleTrack[];
+  currentAudioTrack: number;
+  currentSubtitleTrack: number;
+  filename: string | null;
+  eofReached: boolean;
+}
+
+type PropertyCallback = (state: Partial<EmbeddedPlayerState>) => void;
+
+function toNumberOrNull(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "bigint") {
+    const asNumber = Number(value);
+    return Number.isFinite(asNumber) ? asNumber : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const asNumber = Number(trimmed);
+    return Number.isFinite(asNumber) ? asNumber : null;
+  }
+  return null;
+}
+
+class EmbeddedMpvService {
+  private initialized = false;
+  private unlisten: (() => void) | null = null;
+  private propertyCallbacks: Set<PropertyCallback> = new Set();
+  private currentState: EmbeddedPlayerState = this.getDefaultState();
+
+  private getDefaultState(): EmbeddedPlayerState {
+    return {
+      isPlaying: false,
+      isPaused: true,
+      position: 0,
+      duration: 0,
+      volume: 100,
+      muted: false,
+      audioTracks: [],
+      subtitleTracks: [],
+      currentAudioTrack: 0,
+      currentSubtitleTrack: 0,
+      filename: null,
+      eofReached: false,
+    };
+  }
+
+  /**
+   * Initialize the embedded MPV player
+   */
+  async initialize(): Promise<void> {
+    if (this.initialized) {
+      console.log("Embedded MPV already initialized");
+      return;
+    }
+
+    const mpvConfig: MpvConfig = {
+      initialOptions: {
+        // Video output - use GPU for best performance
+        vo: "gpu-next",
+        // Hardware decoding
+        hwdec: "auto-safe",
+        // Keep window open after playback ends
+        "keep-open": "yes",
+        // Force window to show
+        "force-window": "yes",
+        // Cache settings for streaming
+        cache: "yes",
+        "cache-secs": "30",
+        "demuxer-max-bytes": "500MiB",
+        "demuxer-max-back-bytes": "100MiB",
+        // No border for embedding
+        border: "no",
+        // Disable mpv OSC (we provide our own React controls)
+        osc: "no",
+        // Enable subtitle rendering
+        "sub-auto": "fuzzy",
+        "sub-visibility": "yes",
+        // Audio settings
+        "audio-display": "no",
+        // Don't quit on end
+        idle: "yes",
+      },
+      observedProperties: OBSERVED_PROPERTIES,
+    };
+
+    try {
+      console.log("Initializing embedded MPV with libmpv...");
+      await init(mpvConfig);
+      this.initialized = true;
+      console.log("Embedded MPV initialized successfully");
+
+      // Make left-click on the video toggle play/pause.
+      // This is important because the mpv surface can capture mouse input
+      // (so the webview may not receive click events on the blank video area).
+      try {
+        await command("define-section", [
+          "streamio_mouse",
+          "MBTN_LEFT cycle pause\n",
+          "force",
+        ]);
+        await command("enable-section", ["streamio_mouse"]);
+      } catch (error) {
+        console.warn("Failed to set mpv mouse bindings:", error);
+      }
+
+      // Start observing properties
+      await this.startPropertyObserver();
+    } catch (error) {
+      console.error("Failed to initialize embedded MPV:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Set video margin ratio to avoid overlapping with UI elements
+   * Values are percentages (0.0 to 1.0)
+   */
+  async setMargins(margins: {
+    top?: number;
+    bottom?: number;
+    left?: number;
+    right?: number;
+  }): Promise<void> {
+    if (!this.initialized) return;
+
+    try {
+      await setVideoMarginRatio({
+        top: margins.top ?? 0,
+        bottom: margins.bottom ?? 0,
+        left: margins.left ?? 0,
+        right: margins.right ?? 0,
+      });
+    } catch (error) {
+      console.warn("Failed to set video margins:", error);
+    }
+  }
+
+  /**
+   * Start observing MPV properties for state updates
+   */
+  private async startPropertyObserver(): Promise<void> {
+    try {
+      this.unlisten = await observeProperties(
+        OBSERVED_PROPERTIES,
+        ({ name, data }) => {
+          const updates: Partial<EmbeddedPlayerState> = {};
+
+          switch (name) {
+            case "pause":
+              updates.isPaused = data as boolean;
+              updates.isPlaying = !(data as boolean);
+              break;
+            case "time-pos":
+              if (data !== null) {
+                updates.position = toNumberOrNull(data) ?? 0;
+              }
+              break;
+            case "duration":
+              if (data !== null) {
+                updates.duration = toNumberOrNull(data) ?? 0;
+              }
+              break;
+            case "volume":
+              updates.volume = toNumberOrNull(data) ?? 100;
+              break;
+            case "mute":
+              updates.muted = data as boolean;
+              break;
+            case "aid":
+              updates.currentAudioTrack = toNumberOrNull(data) ?? 0;
+              break;
+            case "sid":
+              updates.currentSubtitleTrack = toNumberOrNull(data) ?? 0;
+              break;
+            case "filename":
+              updates.filename = data as string | null;
+              break;
+            case "eof-reached":
+              updates.eofReached = data as boolean;
+              break;
+          }
+
+          // Update current state
+          Object.assign(this.currentState, updates);
+
+          // Notify callbacks
+          this.propertyCallbacks.forEach((cb) => cb(updates));
+        },
+      );
+    } catch (error) {
+      console.error("Failed to start property observer:", error);
+    }
+  }
+
+  /**
+   * Subscribe to property changes
+   */
+  onPropertyChange(callback: PropertyCallback): () => void {
+    this.propertyCallbacks.add(callback);
+    return () => {
+      this.propertyCallbacks.delete(callback);
+    };
+  }
+
+  /**
+   * Fetch and update audio/subtitle tracks
+   */
+  async refreshTracks(): Promise<void> {
+    try {
+      // Get track count
+      const trackCountRaw = await getProperty("track-list/count", "int64");
+      const trackCount = toNumberOrNull(trackCountRaw) ?? 0;
+
+      const audioTracks: AudioTrack[] = [];
+      const subtitleTracks: SubtitleTrack[] = [];
+
+      for (let i = 0; i < trackCount; i++) {
+        const type = await getProperty(`track-list/${i}/type`, "string");
+        const idRaw = await getProperty(`track-list/${i}/id`, "int64");
+        const id = toNumberOrNull(idRaw);
+        if (id === null) continue;
+        const title = await getProperty(
+          `track-list/${i}/title`,
+          "string",
+        ).catch(() => null);
+        const lang = await getProperty(`track-list/${i}/lang`, "string").catch(
+          () => null,
+        );
+        const codec = await getProperty(
+          `track-list/${i}/codec`,
+          "string",
+        ).catch(() => null);
+        const selected = await getProperty(
+          `track-list/${i}/selected`,
+          "flag",
+        ).catch(() => false);
+
+        if (type === "audio") {
+          const channels = await getProperty(
+            `track-list/${i}/audio-channels`,
+            "int64",
+          ).catch(() => null);
+          const channelsNum =
+            channels === null ? null : toNumberOrNull(channels);
+          audioTracks.push({
+            id,
+            title: title as string | null,
+            lang: lang as string | null,
+            codec: codec as string | null,
+            channels: channelsNum,
+            selected: selected as boolean,
+          });
+        } else if (type === "sub") {
+          const external = await getProperty(
+            `track-list/${i}/external`,
+            "flag",
+          ).catch(() => false);
+          subtitleTracks.push({
+            id,
+            title: title as string | null,
+            lang: lang as string | null,
+            codec: codec as string | null,
+            external: external as boolean,
+            selected: selected as boolean,
+          });
+        }
+      }
+
+      this.currentState.audioTracks = audioTracks;
+      this.currentState.subtitleTracks = subtitleTracks;
+
+      // Notify about track updates
+      this.propertyCallbacks.forEach((cb) =>
+        cb({
+          audioTracks,
+          subtitleTracks,
+        }),
+      );
+    } catch (error) {
+      console.error("Failed to refresh tracks:", error);
+    }
+  }
+
+  /**
+   * Get current player state
+   */
+  getState(): EmbeddedPlayerState {
+    return { ...this.currentState };
+  }
+
+  /**
+   * Load and play a video file/URL
+   */
+  async loadFile(url: string): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    console.log("Loading file in embedded MPV:", url);
+    await command("loadfile", [url]);
+
+    // Refresh tracks after a short delay to allow MPV to process
+    setTimeout(() => this.refreshTracks(), 1500);
+  }
+
+  /**
+   * Toggle play/pause
+   */
+  async togglePause(): Promise<void> {
+    await command("cycle", ["pause"]);
+  }
+
+  /**
+   * Play
+   */
+  async play(): Promise<void> {
+    await setProperty("pause", false);
+  }
+
+  /**
+   * Pause
+   */
+  async pause(): Promise<void> {
+    await setProperty("pause", true);
+  }
+
+  /**
+   * Stop playback
+   */
+  async stop(): Promise<void> {
+    if (!this.initialized) {
+      return;
+    }
+    try {
+      await command("stop", []);
+    } catch (error) {
+      console.warn("Stop command failed (MPV may already be stopped):", error);
+    }
+    this.currentState = this.getDefaultState();
+  }
+
+  /**
+   * Seek to absolute position (in seconds)
+   */
+  async seek(position: number): Promise<void> {
+    await command("seek", [position.toString(), "absolute"]);
+  }
+
+  /**
+   * Seek relative (in seconds, can be negative)
+   */
+  async seekRelative(seconds: number): Promise<void> {
+    await command("seek", [seconds.toString(), "relative"]);
+  }
+
+  /**
+   * Set volume (0-100)
+   */
+  async setVolume(volume: number): Promise<void> {
+    await setProperty("volume", Math.max(0, Math.min(100, volume)));
+  }
+
+  /**
+   * Toggle mute
+   */
+  async toggleMute(): Promise<void> {
+    await command("cycle", ["mute"]);
+  }
+
+  /**
+   * Set audio track by ID
+   */
+  async setAudioTrack(trackId: number): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    const trackIdNum = toNumberOrNull(trackId) ?? 0;
+
+    // Validate track exists
+    const trackExists = this.currentState.audioTracks.some(
+      (t) => t.id === trackIdNum,
+    );
+    if (trackIdNum !== 0 && !trackExists) {
+      console.warn(`Audio track ${trackIdNum} does not exist, refreshing...`);
+      await this.refreshTracks();
+      // Check again after refresh
+      const stillDoesNotExist = !this.currentState.audioTracks.some(
+        (t) => t.id === trackIdNum,
+      );
+      if (stillDoesNotExist) {
+        throw new Error(`Audio track ${trackIdNum} not found`);
+      }
+    }
+
+    const apply = async () => {
+      if (trackIdNum === 0) {
+        // Disable audio track using MPV command
+        await command("set", ["aid", "no"]);
+      } else {
+        // Set audio track using MPV command
+        await command("set", ["aid", trackIdNum.toString()]);
+      }
+    };
+
+    try {
+      await apply();
+      console.log(`Successfully set audio track to ${trackIdNum}`);
+    } catch (error) {
+      console.warn("Failed to set audio track, retrying...", error);
+      await new Promise((r) => setTimeout(r, 250));
+      await this.refreshTracks();
+      await apply();
+    }
+
+    this.currentState.currentAudioTrack = trackIdNum;
+    // Keep selected flags in sync for UI
+    setTimeout(() => this.refreshTracks(), 200);
+  }
+
+  /**
+   * Set subtitle track by ID (0 to disable)
+   */
+  async setSubtitleTrack(trackId: number | bigint): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    const trackIdNum = toNumberOrNull(trackId) ?? 0;
+
+    // Validate track exists (unless disabling)
+    if (trackIdNum !== 0) {
+      const trackExists = this.currentState.subtitleTracks.some(
+        (t) => t.id === trackIdNum,
+      );
+      if (!trackExists) {
+        console.warn(
+          `Subtitle track ${trackIdNum} does not exist, refreshing...`,
+        );
+        await this.refreshTracks();
+        // Check again after refresh
+        const stillDoesNotExist = !this.currentState.subtitleTracks.some(
+          (t) => t.id === trackIdNum,
+        );
+        if (stillDoesNotExist) {
+          throw new Error(`Subtitle track ${trackIdNum} not found`);
+        }
+      }
+    }
+
+    const apply = async () => {
+      if (trackIdNum === 0) {
+        // Disable subtitles using MPV command
+        await command("set", ["sid", "no"]);
+        await command("set", ["sub-visibility", "no"]);
+      } else {
+        // Set subtitle track using MPV command
+        await command("set", ["sid", trackIdNum.toString()]);
+        await command("set", ["sub-visibility", "yes"]);
+      }
+    };
+
+    try {
+      await apply();
+      console.log(`Successfully set subtitle track to ${trackIdNum}`);
+    } catch (error) {
+      // If tracks haven't finished loading yet, retry once after a short delay.
+      console.warn("Failed to set subtitle track, retrying...", error);
+      await new Promise((r) => setTimeout(r, 250));
+      await this.refreshTracks();
+      await apply();
+    }
+
+    this.currentState.currentSubtitleTrack = trackIdNum;
+    // Keep selected flags in sync for UI
+    setTimeout(() => this.refreshTracks(), 200);
+  }
+
+  /**
+   * Add an external subtitle track from a URL (e.g. OpenSubtitles/Stremio URL).
+   * Returns the selected subtitle track id (sid) when successful.
+   */
+  async addExternalSubtitle(
+    url: string,
+    select: boolean = true,
+  ): Promise<number | null> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    try {
+      await command("sub-add", [url, select ? "select" : "auto"]);
+
+      // Give mpv a moment to register the track, then refresh.
+      await new Promise((r) => setTimeout(r, 250));
+      await this.refreshTracks();
+
+      const sidRaw = await getProperty("sid", "int64").catch(() => null);
+      const selectedId = toNumberOrNull(sidRaw);
+      if (selectedId !== null) {
+        this.currentState.currentSubtitleTrack = selectedId;
+        await setProperty("sub-visibility", true);
+      }
+      return selectedId;
+    } catch (error) {
+      console.warn("Failed to add external subtitle:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Set subtitle delay in seconds
+   */
+  async setSubtitleDelay(seconds: number): Promise<void> {
+    await setProperty("sub-delay", seconds);
+  }
+
+  /**
+   * Toggle fullscreen (handled by Tauri window, not MPV internally)
+   */
+  async toggleFullscreen(): Promise<void> {
+    // This is now handled at the component level using Tauri's window API
+    // MPV's internal fullscreen doesn't work well with embedded mode
+    console.warn("toggleFullscreen should be handled by Tauri window API");
+  }
+
+  /**
+   * Get a display name for a track
+   */
+  getTrackDisplayName(track: AudioTrack | SubtitleTrack): string {
+    const parts: string[] = [];
+
+    // Add title if available
+    if (track.title) {
+      parts.push(track.title);
+    }
+
+    // Add language
+    if (track.lang) {
+      const langName = this.getLanguageName(track.lang);
+      if (
+        !track.title ||
+        !track.title.toLowerCase().includes(track.lang.toLowerCase())
+      ) {
+        parts.push(langName);
+      }
+    }
+
+    // Add codec info
+    if (track.codec) {
+      parts.push(`[${track.codec.toUpperCase()}]`);
+    }
+
+    // Add channel info for audio tracks
+    if ("channels" in track && track.channels) {
+      const channelStr =
+        track.channels === 2
+          ? "Stereo"
+          : track.channels === 6
+            ? "5.1"
+            : track.channels === 8
+              ? "7.1"
+              : `${track.channels}ch`;
+      parts.push(channelStr);
+    }
+
+    // Add external marker for subtitles
+    if ("external" in track && track.external) {
+      parts.push("(External)");
+    }
+
+    return parts.length > 0 ? parts.join(" ") : `Track ${track.id}`;
+  }
+
+  /**
+   * Convert language code to display name
+   */
+  private getLanguageName(code: string): string {
+    const languages: Record<string, string> = {
+      eng: "English",
+      en: "English",
+      jpn: "Japanese",
+      ja: "Japanese",
+      spa: "Spanish",
+      es: "Spanish",
+      fre: "French",
+      fr: "French",
+      ger: "German",
+      de: "German",
+      ita: "Italian",
+      it: "Italian",
+      por: "Portuguese",
+      pt: "Portuguese",
+      rus: "Russian",
+      ru: "Russian",
+      chi: "Chinese",
+      zh: "Chinese",
+      kor: "Korean",
+      ko: "Korean",
+      ara: "Arabic",
+      ar: "Arabic",
+      hin: "Hindi",
+      hi: "Hindi",
+      und: "Unknown",
+    };
+    return languages[code.toLowerCase()] || code.toUpperCase();
+  }
+
+  /**
+   * Destroy the MPV instance
+   */
+  async destroy(): Promise<void> {
+    if (this.unlisten) {
+      this.unlisten();
+      this.unlisten = null;
+    }
+
+    if (this.initialized) {
+      try {
+        await destroy();
+      } catch (error) {
+        console.error("Error destroying MPV:", error);
+      }
+      this.initialized = false;
+      this.currentState = this.getDefaultState();
+    }
+  }
+}
+
+// Export singleton instance
+export const embeddedMpvService = new EmbeddedMpvService();

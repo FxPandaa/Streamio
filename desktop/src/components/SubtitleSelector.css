@@ -1,0 +1,278 @@
+.subtitle-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: var(--blur-sm);
+  -webkit-backdrop-filter: var(--blur-sm);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-full);
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+}
+
+.subtitle-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.subtitle-toggle-btn.has-subtitle {
+  border-color: var(--accent-primary);
+  background: rgba(99, 102, 241, 0.2);
+}
+
+.subtitle-toggle-btn.has-subtitle .subtitle-icon {
+  background: var(--accent-primary);
+  color: white;
+}
+
+.subtitle-icon {
+  font-weight: 700;
+  font-size: 11px;
+  padding: 3px 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-xs);
+  transition: all 0.2s ease;
+}
+
+.subtitle-status {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  min-width: 28px;
+  text-align: center;
+}
+
+.subtitle-toggle-btn.has-subtitle .subtitle-status {
+  color: var(--accent-primary);
+}
+
+.subtitle-selector {
+  position: absolute;
+  bottom: 90px;
+  right: 24px;
+  width: 420px;
+  max-height: 520px;
+  background: rgba(15, 15, 20, 0.95);
+  border-radius: var(--radius-xl);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  animation: scaleIn 0.25s ease-out;
+}
+
+.subtitle-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.subtitle-header h3 {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.close-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 18px;
+  cursor: pointer;
+  border-radius: var(--radius-full);
+  transition: all var(--transition-normal);
+}
+
+.close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  transform: rotate(90deg);
+}
+
+.subtitle-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.subtitle-option {
+  width: 100%;
+  padding: 14px 18px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: white;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+}
+
+.subtitle-option:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.subtitle-option.active {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
+  color: white !important;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+.subtitle-option.active::after {
+  content: "✓";
+  font-size: 16px;
+  font-weight: bold;
+  color: white;
+  margin-left: auto;
+}
+
+.subtitle-option.active .subtitle-meta {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.subtitle-lang {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.subtitle-language-group {
+  margin-bottom: 12px;
+}
+
+.subtitle-language-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 16px 4px;
+}
+
+.subtitle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.subtitle-filename {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subtitle-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.subtitle-badge {
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.subtitle-downloads,
+.subtitle-rating {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.subtitle-rating {
+  color: var(--accent-yellow);
+}
+
+/* Timing Controls */
+.subtitle-timing {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.timing-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.timing-value {
+  font-weight: 600;
+  color: var(--accent-primary);
+  font-family: monospace;
+}
+
+.timing-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.timing-btn {
+  flex: 1;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.timing-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.timing-btn:active {
+  transform: scale(0.98);
+}
+
+/* Scrollbar styling */
+.subtitle-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.subtitle-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.subtitle-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.subtitle-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}

@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+target/
+build/
+
+# Database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+data/
+
+# Environment files (NEVER commit secrets)
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+
+# Test
+coverage/
+
+# Temp
+tmp/
+temp/
+*.tmp
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# MPV Binaries (too large for GitHub - distribute via releases)
+desktop/src-tauri/resources/mpv/*.dll
+desktop/src-tauri/resources/mpv/*.exe
+desktop/src-tauri/lib/
+
+# Package locks (keep package-lock.json)
+yarn.lock
+pnpm-lock.yaml
