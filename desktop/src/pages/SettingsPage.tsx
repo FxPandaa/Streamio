@@ -901,21 +901,6 @@ function SubscriptionSection() {
 
   const status = subscription?.status ?? "not_subscribed";
 
-  const statusLabels: Record<string, { label: string; color: string }> = {
-    not_subscribed: { label: "No Subscription", color: "#888" },
-    paid_pending_provision: { label: "Setting Up...", color: "#f5a623" },
-    provisioned_pending_confirm: {
-      label: "Check Your Email",
-      color: "#f5a623",
-    },
-    active: { label: "Active", color: "#4caf50" },
-    past_due: { label: "Past Due", color: "#f44336" },
-    canceled: { label: "Canceled", color: "#f44336" },
-    expired: { label: "Expired", color: "#888" },
-  };
-
-  const statusInfo = statusLabels[status] ?? statusLabels.not_subscribed;
-
   const handleCheckout = async () => {
     const url = await startCheckout();
     if (url) {

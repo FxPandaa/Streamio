@@ -18,7 +18,6 @@ export function HeroBanner({ items, isLoading = false }: HeroBannerProps) {
 
   const item = items.length > 0 ? items[activeIndex % items.length] : null;
   const validLogo = useValidatedImage(item?.logo);
-  const isLogoPending = Boolean(item?.logo) && validLogo === undefined;
 
   const goTo = useCallback(
     (index: number) => {

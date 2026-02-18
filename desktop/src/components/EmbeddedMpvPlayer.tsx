@@ -812,9 +812,6 @@ export function EmbeddedMpvPlayer({
   const embeddedSubtitleTracks = state?.subtitleTracks?.filter(
     (t) => !t.external,
   );
-  const groupedSubtitleTracks = embeddedSubtitleTracks?.length
-    ? groupTracksByLanguage(embeddedSubtitleTracks, preferredSubtitleLang)
-    : new Map();
 
   // Score & sort embedded tracks for the subtitle panel
   const scoredEmbeddedTracks = (embeddedSubtitleTracks || [])
