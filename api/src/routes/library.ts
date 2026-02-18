@@ -1,5 +1,5 @@
 /**
- * Streamio API - Library Routes
+ * Vreamio API - Library Routes
  * User's watchlist/favorites management
  */
 

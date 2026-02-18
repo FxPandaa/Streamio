@@ -1,25 +1,105 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { MediaItem } from "../services/metadata/cinemeta";
+import { useValidatedImage } from "../utils/useValidatedImage";
 import "./MediaCard.css";
 
 interface MediaCardProps {
   item: MediaItem;
   size?: "small" | "medium" | "large";
+  variant?: "poster" | "landscape";
   showRating?: boolean;
 }
 
 export function MediaCard({
   item,
   size = "medium",
+  variant = "poster",
   showRating = true,
 }: MediaCardProps) {
   const linkPath = `/details/${item.type}/${item.id}`;
+  const [runtimeLogoError, setRuntimeLogoError] = useState(false);
+  const [runtimePosterError, setRuntimePosterError] = useState(false);
+  const [runtimeBackdropError, setRuntimeBackdropError] = useState(false);
+
+  const validatedPoster = useValidatedImage(item.poster || null);
+  const validatedLogo = useValidatedImage(item.logo || null);
+  const validatedBackdrop = useValidatedImage(
+    (item.backdrop || item.background || item.poster) ?? null,
+  );
+
+  if (variant === "landscape") {
+    const bgImage = runtimeBackdropError ? null : validatedBackdrop;
+
+    return (
+      <Link
+        to={linkPath}
+        className={`media-card media-card-landscape media-card-landscape-${size}`}
+      >
+        <div className="media-card-landscape-image">
+          {bgImage ? (
+            <img
+              src={bgImage}
+              alt={item.title}
+              loading="lazy"
+              onError={() => setRuntimeBackdropError(true)}
+            />
+          ) : (
+            <div className="media-card-placeholder">
+              <span>{item.type === "movie" ? "🎬" : "📺"}</span>
+            </div>
+          )}
+
+          <div className="media-card-landscape-gradient"></div>
+
+          {/* Logo overlay */}
+          {validatedLogo && !runtimeLogoError ? (
+            <div className="media-card-logo">
+              <img
+                src={validatedLogo}
+                alt={item.title}
+                onError={() => setRuntimeLogoError(true)}
+              />
+            </div>
+          ) : (
+            <div className="media-card-logo-text">
+              <h3>{item.title}</h3>
+            </div>
+          )}
+
+          <div className="media-card-overlay">
+            <button className="play-btn">▶</button>
+          </div>
+
+          {showRating && item.rating > 0 && (
+            <div className="media-card-rating">
+              <span className="star">★</span>
+              <span>{item.rating.toFixed(1)}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="media-card-landscape-meta">
+          <span className="year">{item.year || "TBA"}</span>
+          <span className="dot">·</span>
+          <span className="type">
+            {item.type === "movie" ? "Movie" : "Series"}
+          </span>
+        </div>
+      </Link>
+    );
+  }
 
   return (
     <Link to={linkPath} className={`media-card media-card-${size}`}>
       <div className="media-card-poster">
-        {item.poster ? (
-          <img src={item.poster} alt={item.title} loading="lazy" />
+        {validatedPoster && !runtimePosterError ? (
+          <img
+            src={validatedPoster}
+            alt={item.title}
+            loading="lazy"
+            onError={() => setRuntimePosterError(true)}
+          />
         ) : (
           <div className="media-card-placeholder">
             <span>{item.type === "movie" ? "🎬" : "📺"}</span>

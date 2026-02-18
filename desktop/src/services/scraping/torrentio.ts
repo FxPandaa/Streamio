@@ -140,7 +140,7 @@ class TorrentioService {
       const response = await tauriFetch(url, {
         method: "GET",
         headers: {
-          "User-Agent": "Streamio/1.0",
+          "User-Agent": "Vreamio/1.0",
         },
       });
 

@@ -1,7 +1,6 @@
 .library-page {
   padding: 32px 56px;
   min-height: calc(100vh - 76px);
-  animation: fadeIn 0.5s ease-out;
 }
 
 .library-section {

@@ -1,5 +1,5 @@
 /**
- * Streamio API - Utilities Index
+ * Vreamio API - Utilities Index
  * Re-export all utilities for convenient importing
  */
 

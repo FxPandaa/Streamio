@@ -1,5 +1,10 @@
 import { TorrentResult } from "../scraping/types";
-import { createDebridProvider, DebridProvider } from "./providers";
+import {
+  createDebridProvider,
+  DebridProvider,
+  TorBoxProvider,
+  PremiumizeProvider,
+} from "./providers";
 import { useSettingsStore } from "../../stores/settingsStore";
 
 export interface StreamLink {
@@ -232,13 +237,43 @@ export class DebridService {
         );
       }
 
-      // Unrestrict the first link (usually the video file)
-      const link = await provider.unrestrictLink(torrentInfo.links[0]);
+      // Unrestrict the first link (RD/AD) or get download URL (TorBox/Premiumize)
+      let resultUrl = "";
+      let resultFilename = "";
+      let resultFilesize = 0;
+
+      if (provider instanceof TorBoxProvider) {
+        // TorBox: use requestdl endpoint with torrent_id + file_id
+        const videoFiles = (torrentInfo.files || []).filter((f) =>
+          /\.(mkv|mp4|avi|wmv|mov)$/i.test(f.path),
+        );
+        const targetFile =
+          videoFiles.length > 0
+            ? videoFiles.reduce((a, b) => (a.bytes > b.bytes ? a : b))
+            : torrentInfo.files?.[0];
+
+        const fileId = targetFile?.id ?? 0;
+        resultUrl = await provider.getDownloadLink(torrentId, fileId);
+        resultFilename = targetFile?.path || torrentInfo.filename;
+        resultFilesize = targetFile?.bytes || torrentInfo.bytes;
+      } else if (provider instanceof PremiumizeProvider) {
+        // Premiumize: use directdl with the magnet URI
+        const dl = await provider.getDirectDownload(magnetUri);
+        resultUrl = dl.url;
+        resultFilename = dl.filename;
+        resultFilesize = dl.filesize;
+      } else {
+        // RealDebrid / AllDebrid: unrestrict the link
+        const link = await provider.unrestrictLink(torrentInfo.links[0]);
+        resultUrl = link.download;
+        resultFilename = link.filename;
+        resultFilesize = link.filesize;
+      }
 
       const result: StreamLink = {
-        url: link.download,
-        filename: link.filename,
-        filesize: link.filesize,
+        url: resultUrl,
+        filename: resultFilename,
+        filesize: resultFilesize,
         quality: torrent.quality,
         isInstant: true,
       };
@@ -312,12 +347,40 @@ export class DebridService {
       throw new Error("No links available - torrent may not be cached");
     }
 
-    const link = await provider.unrestrictLink(updatedInfo.links[0]);
+    // Provider-specific link resolution
+    let resultUrl = "";
+    let resultFilename = "";
+    let resultFilesize = 0;
+
+    if (provider instanceof TorBoxProvider) {
+      const videoFiles = (updatedInfo.files || []).filter((f) =>
+        /\.(mkv|mp4|avi|wmv|mov)$/i.test(f.path),
+      );
+      const targetFile =
+        videoFiles.length > 0
+          ? videoFiles.reduce((a, b) => (a.bytes > b.bytes ? a : b))
+          : updatedInfo.files?.[0];
+
+      const fileId = targetFile?.id ?? 0;
+      resultUrl = await provider.getDownloadLink(torrentId, fileId);
+      resultFilename = targetFile?.path || updatedInfo.filename;
+      resultFilesize = targetFile?.bytes || updatedInfo.bytes;
+    } else if (provider instanceof PremiumizeProvider) {
+      const dl = await provider.getDirectDownload(magnetUri);
+      resultUrl = dl.url;
+      resultFilename = dl.filename;
+      resultFilesize = dl.filesize;
+    } else {
+      const link = await provider.unrestrictLink(updatedInfo.links[0]);
+      resultUrl = link.download;
+      resultFilename = link.filename;
+      resultFilesize = link.filesize;
+    }
 
     const result: StreamLink = {
-      url: link.download,
-      filename: link.filename,
-      filesize: link.filesize,
+      url: resultUrl,
+      filename: resultFilename,
+      filesize: resultFilesize,
       quality: torrent.quality,
       isInstant: true,
     };

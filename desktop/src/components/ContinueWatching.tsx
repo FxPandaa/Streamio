@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { WatchHistoryItem, useLibraryStore } from "../stores/libraryStore";
+import { useValidatedImage } from "../utils/useValidatedImage";
 import "./ContinueWatching.css";
 
 interface ContinueWatchingProps {
@@ -26,6 +28,8 @@ export function ContinueWatching({ items }: ContinueWatchingProps) {
 
 function ContinueWatchingCard({ item }: { item: WatchHistoryItem }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [posterError, setPosterError] = useState(false);
+  const validatedPoster = useValidatedImage(item.poster || null);
   const { removeFromHistory } = useLibraryStore();
   const navigate = useNavigate();
 
@@ -81,8 +85,12 @@ function ContinueWatchingCard({ item }: { item: WatchHistoryItem }) {
         style={{ cursor: "pointer" }}
       >
         <div className="continue-card-poster">
-          {item.poster ? (
-            <img src={item.poster} alt={item.title} />
+          {validatedPoster && !posterError ? (
+            <img
+              src={validatedPoster}
+              alt={item.title}
+              onError={() => setPosterError(true)}
+            />
           ) : (
             <div className="continue-card-placeholder">
               {item.type === "movie" ? "🎬" : "📺"}
@@ -119,25 +127,37 @@ function ContinueWatchingCard({ item }: { item: WatchHistoryItem }) {
         </div>
       </div>
 
-      {showDeleteConfirm ? (
-        <div className="delete-confirm-overlay" onClick={handleCancelDelete}>
-          <div
-            className="delete-confirm-popup"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3>Remove from Continue Watching?</h3>
-            <p>This will delete your progress for "{item.title}"</p>
-            <div className="delete-confirm-buttons">
-              <button className="btn btn-ghost" onClick={handleCancelDelete}>
-                Cancel
-              </button>
-              <button className="btn btn-danger" onClick={handleConfirmDelete}>
-                Remove
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {showDeleteConfirm
+        ? createPortal(
+            <div
+              className="delete-confirm-overlay"
+              onClick={handleCancelDelete}
+            >
+              <div
+                className="delete-confirm-popup"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3>Remove from Continue Watching?</h3>
+                <p>This will delete your progress for "{item.title}"</p>
+                <div className="delete-confirm-buttons">
+                  <button
+                    className="btn btn-ghost"
+                    onClick={handleCancelDelete}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    onClick={handleConfirmDelete}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

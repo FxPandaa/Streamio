@@ -1,5 +1,5 @@
 /**
- * Streamio API - Main Application Entry Point
+ * Vreamio API - Main Application Entry Point
  *
  * A lightweight account sync backend for cross-platform streaming
  * Serves Windows, macOS, Linux, Android, iOS, Android TV, and Apple TV
@@ -27,8 +27,15 @@ import {
   historyRoutes,
   metadataRoutes,
   syncRoutes,
+  profileRoutes,
+  billingRoutes,
+  internalRoutes,
 } from "./routes/index.js";
 import { clearExpiredMetadataCache } from "./services/metadata/index.js";
+import {
+  startProvisioningWorker,
+  stopProvisioningWorker,
+} from "./services/provisioning/worker.js";
 
 // ============================================================================
 // APPLICATION SETUP
@@ -40,7 +47,7 @@ const app: Express = express();
  * Initialize the application
  */
 async function initialize(): Promise<void> {
-  console.log("🚀 Starting Streamio API...");
+  console.log("🚀 Starting Vreamio API...");
   console.log(`📍 Environment: ${config.server.nodeEnv}`);
 
   // Validate configuration
@@ -135,7 +142,7 @@ app.get("/health", (_req: Request, res: Response) => {
 // API info
 app.get("/", (_req: Request, res: Response) => {
   res.json({
-    name: "Streamio API",
+    name: "Vreamio API",
     version: "1.0.0",
     description: "Account sync backend for cross-platform streaming",
     endpoints: {
@@ -145,6 +152,8 @@ app.get("/", (_req: Request, res: Response) => {
       history: "/user/history",
       metadata: "/metadata",
       sync: "/sync",
+      billing: "/billing",
+      internal: "/internal",
     },
   });
 });
@@ -156,6 +165,9 @@ app.use("/user/library", libraryRoutes);
 app.use("/user/history", historyRoutes);
 app.use("/metadata", metadataRoutes);
 app.use("/sync", syncRoutes);
+app.use("/profiles", profileRoutes);
+app.use("/billing", billingRoutes);
+app.use("/internal", internalRoutes);
 
 // 404 handler
 app.use(notFoundHandler);
@@ -198,7 +210,7 @@ async function startServer(): Promise<void> {
     const server = app.listen(config.server.port, () => {
       console.log(`
 ╔════════════════════════════════════════════════════════════════╗
-║                    🎬 STREAMIO API v1.0.0                      ║
+║                    🎬 VREAMIO API v1.0.0                       ║
 ╠════════════════════════════════════════════════════════════════╣
 ║  Server running at: http://localhost:${config.server.port.toString().padEnd(25)}║
 ║  Environment: ${config.server.nodeEnv.padEnd(43)}║
@@ -210,6 +222,9 @@ async function startServer(): Promise<void> {
 ║    GET  /user/library      - Synced library                    ║
 ║    GET  /user/history      - Watch history                     ║
 ║    GET  /metadata/search   - Search movies/series              ║
+║    GET  /billing/status    - Subscription status               ║
+║    POST /billing/checkout  - Start payment                     ║
+║    GET  /internal/health   - Operator health check             ║
 ╠════════════════════════════════════════════════════════════════╣
 ║  NOTE: Scraping & debrid handled in apps, not server           ║
 ╚════════════════════════════════════════════════════════════════╝
@@ -219,11 +234,15 @@ async function startServer(): Promise<void> {
     // Start background jobs
     cleanupInterval = startCacheCleanupJob();
 
+    // Start the billing provisioning worker
+    startProvisioningWorker();
+
     // Graceful shutdown
     const shutdown = async () => {
       console.log("\n🛑 Shutting down gracefully...");
 
       clearInterval(cleanupInterval);
+      stopProvisioningWorker();
 
       server.close(() => {
         closeDatabase();

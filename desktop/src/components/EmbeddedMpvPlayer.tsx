@@ -16,6 +16,46 @@ import { openSubtitlesService, type Subtitle } from "../services";
 import { useSettingsStore } from "../stores/settingsStore";
 import "./EmbeddedMpvPlayer.css";
 
+/** Score an embedded subtitle track to determine quality/relevance. Higher = better. */
+function scoreEmbeddedTrack(
+  track: SubtitleTrack,
+  preferredLang: string,
+): number {
+  let score = 0;
+  const lang = (track.lang || "").toLowerCase();
+  const title = (track.title || "").toLowerCase();
+
+  // Language match is highest priority
+  if (lang && preferredLang && lang.includes(preferredLang.toLowerCase())) {
+    score += 1000;
+  } else if (!lang || lang === "und") {
+    // Unknown language — could be the right one
+    score += 100;
+  }
+
+  // Penalize forced / signs-only / songs-only
+  if (title.includes("forced")) score -= 500;
+  if (title.includes("sign") && !title.includes("full")) score -= 400;
+  if (title.includes("song") && !title.includes("full")) score -= 300;
+
+  // Bonus for "full" dialog subtitles
+  if (title.includes("full")) score += 200;
+
+  // Prefer tracks with proper names (well-tagged)
+  if (track.title && track.title.length > 0) score += 50;
+
+  // Codec preference: text-based > bitmap-based
+  if (track.codec) {
+    const codec = track.codec.toLowerCase();
+    if (codec.includes("srt") || codec.includes("subrip")) score += 30;
+    else if (codec.includes("ass") || codec.includes("ssa")) score += 25;
+    else if (codec.includes("webvtt") || codec.includes("vtt")) score += 20;
+    else score += 5;
+  }
+
+  return score;
+}
+
 export interface EpisodeInfo {
   id: string;
   episodeNumber: number;
@@ -34,7 +74,11 @@ interface EmbeddedMpvPlayerProps {
   onEnded?: () => void;
   onError?: (error: string) => void;
   onProgress?: (position: number, duration: number) => void;
+  onSubtitleSelectionChange?: (subtitleId: string | null) => void;
+  onSubtitleOffsetChange?: (offset: number) => void;
   initialPosition?: number;
+  initialSubtitleId?: string | null;
+  initialSubtitleOffset?: number;
   preferredAudioLang?: string;
   preferredSubtitleLang?: string;
   autoPlay?: boolean;
@@ -57,7 +101,11 @@ export function EmbeddedMpvPlayer({
   onEnded,
   onError,
   onProgress,
+  onSubtitleSelectionChange,
+  onSubtitleOffsetChange,
   initialPosition,
+  initialSubtitleId,
+  initialSubtitleOffset = 0,
   preferredAudioLang = "eng",
   preferredSubtitleLang = "eng",
   autoPlay = true,
@@ -75,7 +123,7 @@ export function EmbeddedMpvPlayer({
   const [showEpisodeMenu, setShowEpisodeMenu] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [subtitleDelay, setSubtitleDelay] = useState(0);
+  const [subtitleDelay, setSubtitleDelay] = useState(initialSubtitleOffset);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Online subtitles (Stremio OpenSubtitles addon)
@@ -93,6 +141,24 @@ export function EmbeddedMpvPlayer({
   const containerRef = useRef<HTMLDivElement>(null);
   const loadedUrlRef = useRef<string | null>(null);
   const isPlayingRef = useRef(false);
+  const hasRestoredInitialSubtitleRef = useRef(false);
+  const hasAutoSelectedEmbeddedSubRef = useRef(false);
+  const hasOpenMenuRef = useRef(false);
+
+  useEffect(() => {
+    setSubtitleDelay(initialSubtitleOffset);
+  }, [initialSubtitleOffset]);
+
+  useEffect(() => {
+    hasRestoredInitialSubtitleRef.current = false;
+    hasAutoSelectedEmbeddedSubRef.current = false;
+  }, [url]);
+
+  // Keep menu-open ref in sync so controls timeout can check it
+  useEffect(() => {
+    hasOpenMenuRef.current =
+      showSubtitleMenu || showAudioMenu || showEpisodeMenu;
+  }, [showSubtitleMenu, showAudioMenu, showEpisodeMenu]);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -212,20 +278,18 @@ export function EmbeddedMpvPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url]);
 
-  // Apply preferred language once tracks are available
+  // Apply preferred AUDIO language once audio tracks are available (one-time)
   useEffect(() => {
     if (hasAppliedPreferences.current) return;
     if (!state?.audioTracks.length) return;
 
-    // Wait longer to ensure tracks are fully registered in MPV
-    // Some formats take time to parse all streams
+    // Wait a moment to ensure tracks are fully registered in MPV
     const timer = setTimeout(() => {
       if (hasAppliedPreferences.current) return;
       hasAppliedPreferences.current = true;
 
-      console.log("Applying preferred tracks:", {
+      console.log("Applying preferred audio track:", {
         audioTracks: state.audioTracks.length,
-        subtitleTracks: state.subtitleTracks.length,
       });
 
       // Find and select preferred audio track
@@ -238,27 +302,65 @@ export function EmbeddedMpvPlayer({
           console.warn("Failed to set preferred audio track:", e);
         });
       }
-
-      // Find and select preferred subtitle track
-      if (state.subtitleTracks.length > 0) {
-        const preferredSub = state.subtitleTracks.find((t: SubtitleTrack) =>
-          t.lang?.toLowerCase().includes(preferredSubtitleLang.toLowerCase()),
-        );
-        if (preferredSub) {
-          console.log("Setting preferred subtitle:", preferredSub);
-          embeddedMpvService.setSubtitleTrack(preferredSub.id).catch((e) => {
-            console.warn("Failed to set preferred subtitle track:", e);
-          });
-        }
-      }
-    }, 1000);
+    }, 500);
 
     return () => clearTimeout(timer);
+  }, [state?.audioTracks, preferredAudioLang]);
+
+  // Auto-select preferred embedded subtitle whenever subtitle tracks update.
+  // This handles late-discovered embedded tracks (MPV demuxes progressively).
+  // Only auto-selects if no subtitle (embedded or online) is currently active.
+  useEffect(() => {
+    // Skip if we already auto-selected an embedded sub for this URL
+    if (hasAutoSelectedEmbeddedSubRef.current) return;
+    // Need subtitle tracks to exist
+    if (!state?.subtitleTracks?.length) return;
+    // Skip if an online subtitle is already active
+    if (activeOnlineSubtitleId) return;
+    // Skip if an embedded subtitle is already active (user or preference already selected one)
+    if ((state?.currentSubtitleTrack ?? 0) !== 0) return;
+    // Skip if we are restoring a saved subtitle
+    if (initialSubtitleId && !hasRestoredInitialSubtitleRef.current) return;
+
+    // Find and score embedded (non-external) subtitles
+    const embeddedTracks = state.subtitleTracks.filter((t) => !t.external);
+    if (embeddedTracks.length === 0) return;
+
+    const scored = embeddedTracks
+      .map((t) => ({
+        track: t,
+        score: scoreEmbeddedTrack(t, preferredSubtitleLang),
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    const best = scored[0];
+    // Skip auto-select if the best track has a negative score (e.g. forced-only in wrong lang)
+    if (best.score < 0) return;
+
+    const targetSub = best.track;
+    console.log(
+      "Auto-selecting best embedded subtitle:",
+      targetSub,
+      "score:",
+      best.score,
+    );
+    hasAutoSelectedEmbeddedSubRef.current = true;
+
+    // Immediately update UI state
+    setState((prev) =>
+      prev ? { ...prev, currentSubtitleTrack: targetSub.id } : prev,
+    );
+    embeddedMpvService.setSubtitleTrack(targetSub.id).catch((e) => {
+      console.warn("Failed to auto-select embedded subtitle track:", e);
+    });
+    onSubtitleSelectionChange?.(`embedded:${targetSub.id}`);
   }, [
-    state?.audioTracks,
     state?.subtitleTracks,
-    preferredAudioLang,
+    state?.currentSubtitleTrack,
+    activeOnlineSubtitleId,
     preferredSubtitleLang,
+    initialSubtitleId,
+    onSubtitleSelectionChange,
   ]);
 
   // Seek to initial position once duration is known
@@ -276,13 +378,14 @@ export function EmbeddedMpvPlayer({
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current);
     }
-    controlsTimeoutRef.current = setTimeout(() => {
-      // Use ref to get current playing state
+    controlsTimeoutRef.current = setTimeout(function tick() {
+      // Don't hide controls while a menu panel is open — but reschedule
+      if (hasOpenMenuRef.current) {
+        controlsTimeoutRef.current = setTimeout(tick, 1000);
+        return;
+      }
       if (isPlayingRef.current) {
         setShowControls(false);
-        setShowAudioMenu(false);
-        setShowSubtitleMenu(false);
-        setShowEpisodeMenu(false);
       }
     }, 3000);
   }, []);
@@ -387,8 +490,44 @@ export function EmbeddedMpvPlayer({
         if (cancelled) return;
         setOnlineSubtitles(subs);
 
-        // Auto-select best subtitle: default language first, then top-rated.
+        // Auto-select best online subtitle only if no embedded sub is active
+        // Wait a moment for MPV to discover embedded tracks before deciding
         if (subs.length > 0) {
+          await new Promise((r) => setTimeout(r, 3000));
+          if (cancelled) return;
+
+          // Re-read current state after waiting
+          const currentState = embeddedMpvService.getState();
+          const hasActiveEmbeddedSubtitle =
+            currentState.subtitleTracks.some(
+              (track) => !track.external && track.selected && track.id !== 0,
+            ) ||
+            (currentState.currentSubtitleTrack !== 0 &&
+              !activeOnlineSubtitleId);
+
+          // Also check if embedded auto-select already picked one
+          if (
+            hasActiveEmbeddedSubtitle ||
+            hasAutoSelectedEmbeddedSubRef.current
+          ) {
+            console.log(
+              "Embedded subtitle track already active; skipping addon subtitle autoload.",
+            );
+            return;
+          }
+
+          // Also check if there are ANY embedded (non-external) subtitle tracks
+          // — if so, the auto-select effect will handle them
+          const embeddedTracks = currentState.subtitleTracks.filter(
+            (t) => !t.external,
+          );
+          if (embeddedTracks.length > 0) {
+            console.log(
+              "Embedded subtitle tracks available; deferring to embedded auto-select.",
+            );
+            return;
+          }
+
           const defaultLang = subPrefs.defaultLanguage || preferredSubtitleLang;
           const defaultLangSubs = subs.filter(
             (s) => s.languageCode === defaultLang,
@@ -426,6 +565,7 @@ export function EmbeddedMpvPlayer({
     async (subtitle: Subtitle | null, isAuto: boolean = false) => {
       if (!subtitle) {
         setActiveOnlineSubtitleId(null);
+        onSubtitleSelectionChange?.(null);
         try {
           await embeddedMpvService.setSubtitleTrack(0);
         } catch (e) {
@@ -438,6 +578,7 @@ export function EmbeddedMpvPlayer({
       const existingSid = onlineSubtitleToMpvSidRef.current.get(subtitle.id);
       if (existingSid) {
         setActiveOnlineSubtitleId(subtitle.id);
+        onSubtitleSelectionChange?.(subtitle.id);
         try {
           await embeddedMpvService.setSubtitleTrack(existingSid);
         } catch (e) {
@@ -455,12 +596,13 @@ export function EmbeddedMpvPlayer({
       if (sid) {
         onlineSubtitleToMpvSidRef.current.set(subtitle.id, sid);
         setActiveOnlineSubtitleId(subtitle.id);
+        onSubtitleSelectionChange?.(subtitle.id);
       } else {
         console.warn("mpv did not report a selected sid after sub-add");
       }
       if (!isAuto) showControlsTemporarily();
     },
-    [showControlsTemporarily],
+    [showControlsTemporarily, onSubtitleSelectionChange],
   );
 
   const handleToggleFullscreen = useCallback(async () => {
@@ -509,20 +651,26 @@ export function EmbeddedMpvPlayer({
       console.log("Selecting embedded subtitle track:", track);
       // Clear online subtitle selection when selecting embedded track
       setActiveOnlineSubtitleId(null);
-      setShowSubtitleMenu(false);
+
+      // Immediately update React state for responsive UI (don't wait for MPV observer)
+      setState((prev) =>
+        prev ? { ...prev, currentSubtitleTrack: track ? track.id : 0 } : prev,
+      );
 
       try {
         if (track === null) {
           await embeddedMpvService.setSubtitleTrack(0);
+          onSubtitleSelectionChange?.(null);
         } else {
           await embeddedMpvService.setSubtitleTrack(track.id);
+          onSubtitleSelectionChange?.(`embedded:${track.id}`);
         }
         console.log("Subtitle track set successfully");
       } catch (e) {
         console.error("Failed to set subtitle track:", e);
       }
     },
-    [],
+    [onSubtitleSelectionChange],
   );
 
   const handleSubtitleDelayChange = useCallback(
@@ -530,9 +678,42 @@ export function EmbeddedMpvPlayer({
       const newDelay = subtitleDelay + delta;
       setSubtitleDelay(newDelay);
       embeddedMpvService.setSubtitleDelay(newDelay);
+      onSubtitleOffsetChange?.(newDelay);
     },
-    [subtitleDelay],
+    [subtitleDelay, onSubtitleOffsetChange],
   );
+
+  useEffect(() => {
+    if (!initialSubtitleId || hasRestoredInitialSubtitleRef.current) return;
+
+    if (initialSubtitleId.startsWith("embedded:")) {
+      const sid = parseInt(initialSubtitleId.split(":")[1], 10);
+      if (!Number.isNaN(sid) && state?.subtitleTracks?.length) {
+        const embeddedTrack = state.subtitleTracks.find((t) => t.id === sid);
+        if (embeddedTrack) {
+          hasRestoredInitialSubtitleRef.current = true;
+          handleSubtitleTrackSelect(embeddedTrack);
+        }
+      }
+      return;
+    }
+
+    if (onlineSubtitles.length > 0) {
+      const onlineMatch = onlineSubtitles.find(
+        (s) => s.id === initialSubtitleId,
+      );
+      if (onlineMatch) {
+        hasRestoredInitialSubtitleRef.current = true;
+        handleSelectOnlineSubtitle(onlineMatch, true);
+      }
+    }
+  }, [
+    initialSubtitleId,
+    onlineSubtitles,
+    state?.subtitleTracks,
+    handleSelectOnlineSubtitle,
+    handleSubtitleTrackSelect,
+  ]);
 
   const formatTime = (seconds: number): string => {
     if (!seconds || !isFinite(seconds)) return "0:00";
@@ -584,7 +765,17 @@ export function EmbeddedMpvPlayer({
 
     tracks.forEach((track) => {
       const lang = track.lang?.toLowerCase() || "und";
-      const langName = langNames[lang] || lang.toUpperCase();
+      let langName = langNames[lang] || lang.toUpperCase();
+
+      // For subtitle tracks without language info, label them as "Embedded"
+      // instead of "Unknown" when they are not external
+      if (
+        langName === "Unknown" &&
+        "external" in track &&
+        !(track as SubtitleTrack).external
+      ) {
+        langName = "Embedded";
+      }
 
       if (!grouped.has(langName)) {
         grouped.set(langName, []);
@@ -616,9 +807,40 @@ export function EmbeddedMpvPlayer({
   const groupedAudioTracks = state?.audioTracks
     ? groupTracksByLanguage(state.audioTracks, preferredAudioLang)
     : new Map();
-  const groupedSubtitleTracks = state?.subtitleTracks
-    ? groupTracksByLanguage(state.subtitleTracks, preferredSubtitleLang)
+  // Only group non-external (embedded) subtitle tracks here.
+  // External tracks added via sub-add are already handled by the onlineSubtitles array.
+  const embeddedSubtitleTracks = state?.subtitleTracks?.filter(
+    (t) => !t.external,
+  );
+  const groupedSubtitleTracks = embeddedSubtitleTracks?.length
+    ? groupTracksByLanguage(embeddedSubtitleTracks, preferredSubtitleLang)
     : new Map();
+
+  // Score & sort embedded tracks for the subtitle panel
+  const scoredEmbeddedTracks = (embeddedSubtitleTracks || [])
+    .map((t) => ({
+      track: t,
+      score: scoreEmbeddedTrack(t, preferredSubtitleLang),
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  // Group online subtitles by language for the subtitle panel
+  const groupedOnlineSubs = onlineSubtitles.reduce(
+    (acc, sub) => {
+      const lang = sub.language || sub.languageCode || "Unknown";
+      if (!acc[lang]) acc[lang] = [];
+      acc[lang].push(sub);
+      return acc;
+    },
+    {} as Record<string, Subtitle[]>,
+  );
+  // Sort online subs within each group by rating desc
+  Object.values(groupedOnlineSubs).forEach((subs) =>
+    subs.sort((a, b) => {
+      if (b.rating !== a.rating) return b.rating - a.rating;
+      return (b.downloads || 0) - (a.downloads || 0);
+    }),
+  );
 
   // Calculate progress percentage for CSS
   const progressPercent = state?.duration
@@ -644,10 +866,9 @@ export function EmbeddedMpvPlayer({
       className={`embedded-mpv-player ${showControls ? "embedded-mpv-player--controls-visible" : ""}`}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => {
-        if (state?.isPlaying) {
+        if (state?.isPlaying && !hasOpenMenuRef.current) {
           setShowControls(false);
           setShowAudioMenu(false);
-          setShowSubtitleMenu(false);
         }
       }}
     >
@@ -765,235 +986,40 @@ export function EmbeddedMpvPlayer({
             )}
 
             {/* Audio track selector */}
-            <div className="embedded-mpv-controls__dropdown">
-              <button
-                className="embedded-mpv-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowAudioMenu(!showAudioMenu);
-                  setShowSubtitleMenu(false);
-                  setShowEpisodeMenu(false);
-                }}
-                title="Audio Track"
-              >
-                🔈 Audio
-              </button>
-              {showAudioMenu && (
-                <div
-                  className="embedded-mpv-dropdown__menu"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="embedded-mpv-dropdown__header">
-                    Audio Tracks
-                  </div>
-                  {groupedAudioTracks.size === 0 ? (
-                    <div className="embedded-mpv-dropdown__item">
-                      No audio tracks
-                    </div>
-                  ) : (
-                    Array.from(groupedAudioTracks.entries()).map(
-                      ([langName, tracks]) => (
-                        <div
-                          key={langName}
-                          className="embedded-mpv-dropdown__group"
-                        >
-                          <div className="embedded-mpv-dropdown__group-header">
-                            {langName}
-                          </div>
-                          {tracks.map((track: AudioTrack) => (
-                            <button
-                              key={track.id}
-                              className={`embedded-mpv-dropdown__item ${track.selected ? "selected" : ""}`}
-                              onClick={() => handleAudioTrackSelect(track)}
-                            >
-                              {track.selected && "✓ "}
-                              {track.codec?.toUpperCase() || ""}{" "}
-                              {track.channels
-                                ? track.channels === 6
-                                  ? "5.1"
-                                  : track.channels === 8
-                                    ? "7.1"
-                                    : `${track.channels}ch`
-                                : ""}
-                            </button>
-                          ))}
-                        </div>
-                      ),
-                    )
-                  )}
-                </div>
-              )}
-            </div>
+            <button
+              className={`embedded-mpv-btn embedded-mpv-btn--audio ${(state?.audioTracks?.length ?? 0) > 1 ? "embedded-mpv-btn--audio-multi" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowAudioMenu(!showAudioMenu);
+                setShowSubtitleMenu(false);
+                setShowEpisodeMenu(false);
+              }}
+              title="Audio Track"
+            >
+              <span className="embedded-mpv-audio-icon">🔈</span>
+              <span className="embedded-mpv-audio-label">Audio</span>
+            </button>
 
             {/* Subtitle selector */}
-            <div className="embedded-mpv-controls__dropdown">
-              <button
-                className="embedded-mpv-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowSubtitleMenu(!showSubtitleMenu);
-                  setShowAudioMenu(false);
-                  setShowEpisodeMenu(false);
-                }}
-                title="Subtitles"
-              >
-                CC
-              </button>
-              {showSubtitleMenu && (
-                <div
-                  className="embedded-mpv-dropdown__menu"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="embedded-mpv-dropdown__header">Subtitles</div>
-
-                  {/* Off button at top */}
-                  <button
-                    className={`embedded-mpv-dropdown__item ${!activeOnlineSubtitleId && state?.currentSubtitleTrack === 0 ? "selected" : ""}`}
-                    onClick={() => {
-                      setActiveOnlineSubtitleId(null);
-                      handleSubtitleTrackSelect(null);
-                    }}
-                  >
-                    {!activeOnlineSubtitleId &&
-                      state?.currentSubtitleTrack === 0 &&
-                      "✓ "}
-                    Off
-                  </button>
-
-                  <div className="embedded-mpv-dropdown__divider" />
-
-                  {/* Merged subtitles by language - Embedded and Online mixed together */}
-                  {(() => {
-                    // Build a combined map: language -> {embedded: [], online: []}
-                    const mergedByLang = new Map<
-                      string,
-                      { embedded: SubtitleTrack[]; online: Subtitle[] }
-                    >();
-
-                    // Add embedded tracks
-                    if (groupedSubtitleTracks.size > 0) {
-                      Array.from(groupedSubtitleTracks.entries()).forEach(
-                        ([langName, tracks]) => {
-                          if (!mergedByLang.has(langName)) {
-                            mergedByLang.set(langName, {
-                              embedded: [],
-                              online: [],
-                            });
-                          }
-                          mergedByLang.get(langName)!.embedded = tracks;
-                        },
-                      );
-                    }
-
-                    // Add online subtitles
-                    if (
-                      !isLoadingOnlineSubtitles &&
-                      onlineSubtitles.length > 0
-                    ) {
-                      onlineSubtitles.forEach((s) => {
-                        const langName =
-                          s.language || s.languageCode || "Unknown";
-                        if (!mergedByLang.has(langName)) {
-                          mergedByLang.set(langName, {
-                            embedded: [],
-                            online: [],
-                          });
-                        }
-                        mergedByLang.get(langName)!.online.push(s);
-                      });
-                    }
-
-                    // Sort languages: English first, then alphabetical
-                    const sortedEntries = Array.from(
-                      mergedByLang.entries(),
-                    ).sort(([a], [b]) => {
-                      const aIsEnglish = a.toLowerCase() === "english";
-                      const bIsEnglish = b.toLowerCase() === "english";
-                      if (aIsEnglish && !bIsEnglish) return -1;
-                      if (!aIsEnglish && bIsEnglish) return 1;
-                      return a.localeCompare(b);
-                    });
-
-                    if (sortedEntries.length === 0) {
-                      return (
-                        <div className="embedded-mpv-dropdown__item">
-                          {isLoadingOnlineSubtitles
-                            ? "Loading subtitles..."
-                            : "No subtitles available"}
-                        </div>
-                      );
-                    }
-
-                    return sortedEntries.map(
-                      ([langName, { embedded, online }]) => {
-                        // Sort online subs by rating
-                        const sortedOnline = [...online]
-                          .sort((x, y) => {
-                            if (y.rating !== x.rating)
-                              return y.rating - x.rating;
-                            return (y.downloads || 0) - (x.downloads || 0);
-                          })
-                          .slice(0, 20);
-
-                        return (
-                          <div
-                            key={`merged-${langName}`}
-                            className="embedded-mpv-dropdown__group"
-                          >
-                            <div className="embedded-mpv-dropdown__group-header">
-                              {langName}
-                            </div>
-                            {/* Embedded tracks first */}
-                            {embedded.map((track) => (
-                              <button
-                                key={`emb-${track.id}`}
-                                className={`embedded-mpv-dropdown__item ${!activeOnlineSubtitleId && track.selected ? "selected" : ""}`}
-                                onClick={() => handleSubtitleTrackSelect(track)}
-                              >
-                                {!activeOnlineSubtitleId &&
-                                  track.selected &&
-                                  "✓ "}
-                                📁{" "}
-                                {track.title ||
-                                  track.codec?.toUpperCase() ||
-                                  `Track ${track.id}`}
-                              </button>
-                            ))}
-                            {/* Online subtitles after */}
-                            {sortedOnline.map((sub) => (
-                              <button
-                                key={`onl-${sub.id}`}
-                                className={`embedded-mpv-dropdown__item ${activeOnlineSubtitleId === sub.id ? "selected" : ""}`}
-                                onClick={() => handleSelectOnlineSubtitle(sub)}
-                                title={sub.fileName}
-                              >
-                                {activeOnlineSubtitleId === sub.id && "✓ "}🌐 ★{" "}
-                                {sub.rating.toFixed(1)}
-                                {sub.hearing_impaired ? " • HI" : ""}
-                              </button>
-                            ))}
-                          </div>
-                        );
-                      },
-                    );
-                  })()}
-
-                  <div className="embedded-mpv-dropdown__divider" />
-                  <div className="embedded-mpv-dropdown__header">
-                    Subtitle Delay
-                  </div>
-                  <div className="embedded-mpv-dropdown__delay">
-                    <button onClick={() => handleSubtitleDelayChange(-0.1)}>
-                      -0.1s
-                    </button>
-                    <span>{subtitleDelay.toFixed(1)}s</span>
-                    <button onClick={() => handleSubtitleDelayChange(0.1)}>
-                      +0.1s
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+            <button
+              className={`embedded-mpv-btn embedded-mpv-btn--cc ${(state?.currentSubtitleTrack || 0) !== 0 || activeOnlineSubtitleId ? "embedded-mpv-btn--cc-active" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowSubtitleMenu(!showSubtitleMenu);
+                setShowAudioMenu(false);
+                setShowEpisodeMenu(false);
+              }}
+              title="Subtitles"
+            >
+              <span className="embedded-mpv-cc-icon">CC</span>
+              <span className="embedded-mpv-cc-status">
+                {activeOnlineSubtitleId
+                  ? "ADD"
+                  : (state?.currentSubtitleTrack || 0) !== 0
+                    ? "EMB"
+                    : "OFF"}
+              </span>
+            </button>
 
             {/* Fullscreen */}
             <button
@@ -1006,6 +1032,324 @@ export function EmbeddedMpvPlayer({
           </div>
         </div>
       </div>
+
+      {/* Subtitle Panel Overlay */}
+      {showSubtitleMenu && (
+        <div
+          className="embedded-mpv-subtitle-overlay"
+          onClick={() => setShowSubtitleMenu(false)}
+        >
+          <div
+            className="embedded-mpv-subtitle-panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="embedded-mpv-subtitle-panel__header">
+              <h3>Subtitles</h3>
+              <button
+                className="embedded-mpv-subtitle-panel__close"
+                onClick={() => setShowSubtitleMenu(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="embedded-mpv-subtitle-panel__list">
+              {/* Off option */}
+              <button
+                className={`embedded-mpv-subtitle-panel__item ${
+                  !activeOnlineSubtitleId &&
+                  (state?.currentSubtitleTrack ?? 0) === 0
+                    ? "active"
+                    : ""
+                }`}
+                onClick={() => {
+                  setActiveOnlineSubtitleId(null);
+                  handleSubtitleTrackSelect(null);
+                }}
+              >
+                <span className="embedded-mpv-subtitle-panel__label">Off</span>
+              </button>
+
+              {/* Embedded tracks section */}
+              {scoredEmbeddedTracks.length > 0 && (
+                <div className="embedded-mpv-subtitle-panel__section">
+                  <div className="embedded-mpv-subtitle-panel__section-label">
+                    Embedded Tracks
+                  </div>
+                  {scoredEmbeddedTracks.map(({ track, score }) => {
+                    const isSelected =
+                      !activeOnlineSubtitleId &&
+                      ((state?.currentSubtitleTrack || 0) === track.id ||
+                        track.selected);
+                    const langKey = track.lang?.toLowerCase() || "und";
+                    const langLabel =
+                      langNames[langKey] ||
+                      track.lang?.toUpperCase() ||
+                      "Unknown";
+                    return (
+                      <button
+                        key={`emb-${track.id}`}
+                        className={`embedded-mpv-subtitle-panel__item ${
+                          isSelected ? "active" : ""
+                        }`}
+                        onClick={() => handleSubtitleTrackSelect(track)}
+                      >
+                        <div className="embedded-mpv-subtitle-panel__info">
+                          <span className="embedded-mpv-subtitle-panel__label">
+                            {langLabel}
+                          </span>
+                          <div className="embedded-mpv-subtitle-panel__meta">
+                            <span className="embedded-mpv-subtitle-panel__badge emb">
+                              EMB
+                            </span>
+                            {track.title && (
+                              <span className="embedded-mpv-subtitle-panel__badge">
+                                {track.title}
+                              </span>
+                            )}
+                            {track.codec && (
+                              <span className="embedded-mpv-subtitle-panel__badge codec">
+                                {track.codec.toUpperCase()}
+                              </span>
+                            )}
+                            {score > 500 && (
+                              <span className="embedded-mpv-subtitle-panel__quality">
+                                ★ Best
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Online addon subtitles section */}
+              {Object.keys(groupedOnlineSubs).length > 0 && (
+                <div className="embedded-mpv-subtitle-panel__section">
+                  <div className="embedded-mpv-subtitle-panel__section-label">
+                    Addon Subtitles
+                  </div>
+                  {Object.entries(groupedOnlineSubs).map(([lang, subs]) => (
+                    <div
+                      key={lang}
+                      className="embedded-mpv-subtitle-panel__lang-group"
+                    >
+                      <div className="embedded-mpv-subtitle-panel__lang-header">
+                        {lang}
+                      </div>
+                      {subs.slice(0, 15).map((sub) => {
+                        const mappedSid = onlineSubtitleToMpvSidRef.current.get(
+                          sub.id,
+                        );
+                        const isSelected =
+                          activeOnlineSubtitleId === sub.id ||
+                          (!!mappedSid &&
+                            (state?.currentSubtitleTrack || 0) === mappedSid);
+                        return (
+                          <button
+                            key={`onl-${sub.id}`}
+                            className={`embedded-mpv-subtitle-panel__item ${
+                              isSelected ? "active" : ""
+                            }`}
+                            onClick={() => handleSelectOnlineSubtitle(sub)}
+                            title={sub.fileName}
+                          >
+                            <div className="embedded-mpv-subtitle-panel__info">
+                              <span className="embedded-mpv-subtitle-panel__label">
+                                {sub.language || sub.languageCode}
+                              </span>
+                              <div className="embedded-mpv-subtitle-panel__meta">
+                                <span className="embedded-mpv-subtitle-panel__badge addon">
+                                  ADDON
+                                </span>
+                                {sub.hearing_impaired && (
+                                  <span className="embedded-mpv-subtitle-panel__badge hi">
+                                    HI
+                                  </span>
+                                )}
+                                {sub.foreignPartsOnly && (
+                                  <span className="embedded-mpv-subtitle-panel__badge">
+                                    Foreign
+                                  </span>
+                                )}
+                                <span className="embedded-mpv-subtitle-panel__downloads">
+                                  ↓ {(sub.downloads || 0).toLocaleString()}
+                                </span>
+                                {sub.rating > 0 && (
+                                  <span className="embedded-mpv-subtitle-panel__rating">
+                                    ★ {sub.rating.toFixed(1)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Loading state */}
+              {isLoadingOnlineSubtitles &&
+                scoredEmbeddedTracks.length === 0 && (
+                  <div className="embedded-mpv-subtitle-panel__loading">
+                    Loading subtitles...
+                  </div>
+                )}
+
+              {/* Empty state */}
+              {!isLoadingOnlineSubtitles &&
+                scoredEmbeddedTracks.length === 0 &&
+                Object.keys(groupedOnlineSubs).length === 0 && (
+                  <div className="embedded-mpv-subtitle-panel__empty">
+                    No subtitles available
+                  </div>
+                )}
+            </div>
+
+            {/* Timing controls */}
+            {((state?.currentSubtitleTrack ?? 0) !== 0 ||
+              activeOnlineSubtitleId) && (
+              <div className="embedded-mpv-subtitle-panel__timing">
+                <div className="embedded-mpv-subtitle-panel__timing-header">
+                  <span>Timing Adjustment</span>
+                  <span className="embedded-mpv-subtitle-panel__timing-value">
+                    {subtitleDelay > 0 ? "+" : ""}
+                    {subtitleDelay.toFixed(1)}s
+                  </span>
+                </div>
+                <div className="embedded-mpv-subtitle-panel__timing-controls">
+                  <button
+                    className="embedded-mpv-subtitle-panel__timing-btn"
+                    onClick={() => handleSubtitleDelayChange(-1)}
+                  >
+                    -1s
+                  </button>
+                  <button
+                    className="embedded-mpv-subtitle-panel__timing-btn"
+                    onClick={() => handleSubtitleDelayChange(-0.1)}
+                  >
+                    -0.1s
+                  </button>
+                  <button
+                    className="embedded-mpv-subtitle-panel__timing-btn"
+                    onClick={() => {
+                      setSubtitleDelay(0);
+                      embeddedMpvService.setSubtitleDelay(0);
+                      onSubtitleOffsetChange?.(0);
+                    }}
+                  >
+                    Reset
+                  </button>
+                  <button
+                    className="embedded-mpv-subtitle-panel__timing-btn"
+                    onClick={() => handleSubtitleDelayChange(0.1)}
+                  >
+                    +0.1s
+                  </button>
+                  <button
+                    className="embedded-mpv-subtitle-panel__timing-btn"
+                    onClick={() => handleSubtitleDelayChange(1)}
+                  >
+                    +1s
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Audio Panel Overlay */}
+      {showAudioMenu && (
+        <div
+          className="embedded-mpv-subtitle-overlay"
+          onClick={() => setShowAudioMenu(false)}
+        >
+          <div
+            className="embedded-mpv-subtitle-panel embedded-mpv-audio-panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="embedded-mpv-subtitle-panel__header">
+              <h3>Audio Tracks</h3>
+              <button
+                className="embedded-mpv-subtitle-panel__close"
+                onClick={() => setShowAudioMenu(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="embedded-mpv-subtitle-panel__list">
+              {groupedAudioTracks.size === 0 ? (
+                <div className="embedded-mpv-subtitle-panel__empty">
+                  No audio tracks available
+                </div>
+              ) : (
+                Array.from(groupedAudioTracks.entries()).map(
+                  ([langName, tracks]) => (
+                    <div
+                      key={langName}
+                      className="embedded-mpv-subtitle-panel__section"
+                    >
+                      <div className="embedded-mpv-subtitle-panel__lang-header">
+                        {langName}
+                      </div>
+                      {tracks.map((track: AudioTrack) => {
+                        const isSelected =
+                          track.selected ||
+                          (state?.currentAudioTrack || 0) === track.id;
+                        const channelStr = track.channels
+                          ? track.channels === 2
+                            ? "Stereo"
+                            : track.channels === 6
+                              ? "5.1 Surround"
+                              : track.channels === 8
+                                ? "7.1 Surround"
+                                : `${track.channels}ch`
+                          : "";
+                        return (
+                          <button
+                            key={track.id}
+                            className={`embedded-mpv-subtitle-panel__item ${
+                              isSelected ? "active" : ""
+                            }`}
+                            onClick={() => handleAudioTrackSelect(track)}
+                          >
+                            <div className="embedded-mpv-subtitle-panel__info">
+                              <span className="embedded-mpv-subtitle-panel__label">
+                                {track.title ||
+                                  langNames[track.lang?.toLowerCase() || ""] ||
+                                  track.lang?.toUpperCase() ||
+                                  `Track ${track.id}`}
+                              </span>
+                              <div className="embedded-mpv-subtitle-panel__meta">
+                                {track.codec && (
+                                  <span className="embedded-mpv-subtitle-panel__badge codec">
+                                    {track.codec.toUpperCase()}
+                                  </span>
+                                )}
+                                {channelStr && (
+                                  <span className="embedded-mpv-subtitle-panel__badge">
+                                    {channelStr}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ),
+                )
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Episode Menu Overlay */}
       {showEpisodeMenu && isSeries && episodes.length > 0 && (

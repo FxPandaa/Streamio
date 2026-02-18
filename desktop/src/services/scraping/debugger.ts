@@ -1,7 +1,7 @@
 /**
  * Scraping Observability & Debug System
  *
- * Provides instrumentation for comparing Streamio's scraping pipeline with Torrentio.
+ * Provides instrumentation for comparing Vreamio's scraping pipeline with Torrentio.
  * Logs query inputs, per-provider metrics, and post-processing statistics.
  */
 
@@ -100,10 +100,10 @@ export interface SearchDebugReport {
   // Comparison with Torrentio (if available)
   torrentioComparison?: {
     torrentioCount: number;
-    streamioCount: number;
+    vreamioCount: number;
     overlap: number;
     onlyInTorrentio: string[];
-    onlyInStreamio: string[];
+    onlyInVreamio: string[];
   };
 }
 
@@ -345,38 +345,38 @@ export class ScrapingDebugger {
 
   recordTorrentioComparison(
     torrentioResults: TorrentResult[],
-    streamioResults: TorrentResult[],
+    vreamioResults: TorrentResult[],
   ) {
     if (!this.debugMode || !this.currentReport) return;
 
     const torrentioHashes = new Set(
       torrentioResults.map((r) => r.infoHash).filter(Boolean),
     );
-    const streamioHashes = new Set(
-      streamioResults.map((r) => r.infoHash).filter(Boolean),
+    const vreamioHashes = new Set(
+      vreamioResults.map((r) => r.infoHash).filter(Boolean),
     );
 
     const overlap = [...torrentioHashes].filter((h) =>
-      streamioHashes.has(h),
+      vreamioHashes.has(h),
     ).length;
     const onlyInTorrentio = [...torrentioHashes].filter(
-      (h) => !streamioHashes.has(h),
+      (h) => !vreamioHashes.has(h),
     );
-    const onlyInStreamio = [...streamioHashes].filter(
+    const onlyInVreamio = [...vreamioHashes].filter(
       (h) => !torrentioHashes.has(h),
     );
 
     this.currentReport.torrentioComparison = {
       torrentioCount: torrentioResults.length,
-      streamioCount: streamioResults.length,
+      vreamioCount: vreamioResults.length,
       overlap,
       onlyInTorrentio: onlyInTorrentio.slice(0, 20),
-      onlyInStreamio: onlyInStreamio.slice(0, 20),
+      onlyInVreamio: onlyInVreamio.slice(0, 20),
     };
 
     console.log("[DEBUG] Torrentio comparison:", {
       torrentio: torrentioResults.length,
-      streamio: streamioResults.length,
+      vreamio: vreamioResults.length,
       overlap,
     });
   }
@@ -441,7 +441,7 @@ export class ScrapingDebugger {
       lines.push("");
       lines.push("=== TORRENTIO COMPARISON ===");
       lines.push(`  Torrentio: ${r.torrentioComparison.torrentioCount}`);
-      lines.push(`  Streamio: ${r.torrentioComparison.streamioCount}`);
+      lines.push(`  Vreamio: ${r.torrentioComparison.vreamioCount}`);
       lines.push(`  Overlap: ${r.torrentioComparison.overlap}`);
     }
 

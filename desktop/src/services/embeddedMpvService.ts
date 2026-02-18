@@ -30,6 +30,24 @@ const OBSERVED_PROPERTIES = [
   ["eof-reached", "flag"],
 ] as const satisfies MpvObservableProperty[];
 
+/** High-quality MPV property overrides applied on every init. */
+const HIGH_QUALITY_PROFILE: Record<string, string> = {
+  profile: "gpu-hq",
+  "video-output-levels": "full",
+  scale: "ewa_lanczossharp",
+  cscale: "ewa_lanczossharp",
+  dscale: "mitchell",
+  "dither-depth": "auto",
+  "correct-downscaling": "yes",
+  "linear-downscaling": "yes",
+  "sigmoid-upscaling": "yes",
+  deband: "yes",
+  "tone-mapping": "hable",
+  "tone-mapping-mode": "auto",
+  "target-colorspace-hint": "yes",
+  "icc-profile-auto": "yes",
+};
+
 export interface AudioTrack {
   id: number;
   title: string | null;
@@ -87,6 +105,8 @@ class EmbeddedMpvService {
   private unlisten: (() => void) | null = null;
   private propertyCallbacks: Set<PropertyCallback> = new Set();
   private currentState: EmbeddedPlayerState = this.getDefaultState();
+  private trackRefreshTimers: ReturnType<typeof setTimeout>[] = [];
+  private lastKnownTrackCount: number = 0;
 
   private getDefaultState(): EmbeddedPlayerState {
     return {
@@ -120,6 +140,8 @@ class EmbeddedMpvService {
         vo: "gpu-next",
         // Hardware decoding
         hwdec: "auto-safe",
+        // Full output levels prevent the "washed-out" look
+        "video-output-levels": "full",
         // Keep window open after playback ends
         "keep-open": "yes",
         // Force window to show
@@ -155,17 +177,20 @@ class EmbeddedMpvService {
       // (so the webview may not receive click events on the blank video area).
       try {
         await command("define-section", [
-          "streamio_mouse",
+          "vreamio_mouse",
           "MBTN_LEFT cycle pause\n",
           "force",
         ]);
-        await command("enable-section", ["streamio_mouse"]);
+        await command("enable-section", ["vreamio_mouse"]);
       } catch (error) {
         console.warn("Failed to set mpv mouse bindings:", error);
       }
 
       // Start observing properties
       await this.startPropertyObserver();
+
+      // Apply high-quality video profile for best colour & sharpness
+      await this.applyHighQualityProfile();
     } catch (error) {
       console.error("Failed to initialize embedded MPV:", error);
       throw error;
@@ -360,8 +385,21 @@ class EmbeddedMpvService {
     console.log("Loading file in embedded MPV:", url);
     await command("loadfile", [url]);
 
-    // Refresh tracks after a short delay to allow MPV to process
-    setTimeout(() => this.refreshTracks(), 1500);
+    // Clear any pending track refresh timers from a previous file
+    this.trackRefreshTimers.forEach(clearTimeout);
+    this.trackRefreshTimers = [];
+    this.lastKnownTrackCount = 0;
+
+    // Staggered track refresh: MPV discovers tracks progressively during demux.
+    // For streaming content this can take several seconds.
+    const refreshDelays = [500, 1500, 3000, 5000, 8000];
+    for (const delay of refreshDelays) {
+      const timer = setTimeout(() => this.refreshTracks(), delay);
+      this.trackRefreshTimers.push(timer);
+    }
+
+    // Also poll for new tracks: if track-list/count changes, refresh immediately
+    this.startTrackCountPolling();
   }
 
   /**
@@ -398,6 +436,48 @@ class EmbeddedMpvService {
       console.warn("Stop command failed (MPV may already be stopped):", error);
     }
     this.currentState = this.getDefaultState();
+    // Clear track refresh timers
+    this.trackRefreshTimers.forEach(clearTimeout);
+    this.trackRefreshTimers = [];
+    this.lastKnownTrackCount = 0;
+  }
+
+  /**
+   * Poll for track-list/count changes so we detect newly-discovered embedded tracks.
+   * Stops after 15 seconds (streaming content should have tracks by then).
+   */
+  private startTrackCountPolling(): void {
+    let elapsed = 0;
+    const interval = 1000; // check every second
+    const maxDuration = 15000;
+
+    const poll = async () => {
+      if (!this.initialized || elapsed >= maxDuration) return;
+      elapsed += interval;
+
+      try {
+        const countRaw = await getProperty("track-list/count", "int64");
+        const count = toNumberOrNull(countRaw) ?? 0;
+
+        if (count > 0 && count !== this.lastKnownTrackCount) {
+          console.log(
+            `Track count changed: ${this.lastKnownTrackCount} → ${count}, refreshing tracks`,
+          );
+          this.lastKnownTrackCount = count;
+          await this.refreshTracks();
+        }
+      } catch {
+        // Ignore – MPV may not be ready yet
+      }
+
+      if (elapsed < maxDuration && this.initialized) {
+        const timer = setTimeout(poll, interval);
+        this.trackRefreshTimers.push(timer);
+      }
+    };
+
+    const timer = setTimeout(poll, interval);
+    this.trackRefreshTimers.push(timer);
   }
 
   /**
@@ -489,22 +569,23 @@ class EmbeddedMpvService {
 
     const trackIdNum = toNumberOrNull(trackId) ?? 0;
 
-    // Validate track exists (unless disabling)
+    // Validate track exists (unless disabling) — but never throw.
+    // The UI may show tracks before the service cache fully syncs.
     if (trackIdNum !== 0) {
       const trackExists = this.currentState.subtitleTracks.some(
         (t) => t.id === trackIdNum,
       );
       if (!trackExists) {
         console.warn(
-          `Subtitle track ${trackIdNum} does not exist, refreshing...`,
+          `Subtitle track ${trackIdNum} not in local cache, refreshing...`,
         );
         await this.refreshTracks();
-        // Check again after refresh
-        const stillDoesNotExist = !this.currentState.subtitleTracks.some(
-          (t) => t.id === trackIdNum,
-        );
-        if (stillDoesNotExist) {
-          throw new Error(`Subtitle track ${trackIdNum} not found`);
+        if (
+          !this.currentState.subtitleTracks.some((t) => t.id === trackIdNum)
+        ) {
+          console.warn(
+            `Subtitle track ${trackIdNum} still not in cache — attempting to set anyway`,
+          );
         }
       }
     }
@@ -668,9 +749,32 @@ class EmbeddedMpvService {
   }
 
   /**
+   * Apply the high-quality video profile for best colour & sharpness.
+   */
+  private async applyHighQualityProfile(): Promise<void> {
+    for (const [key, value] of Object.entries(HIGH_QUALITY_PROFILE)) {
+      try {
+        if (key === "profile") {
+          await command("apply-profile", [value]);
+        } else {
+          await setProperty(key, value);
+        }
+      } catch (err) {
+        console.warn(`Failed to set MPV property ${key}=${value}:`, err);
+      }
+    }
+    console.log("Applied high-quality MPV video profile");
+  }
+
+  /**
    * Destroy the MPV instance
    */
   async destroy(): Promise<void> {
+    // Clear all pending track refresh timers
+    this.trackRefreshTimers.forEach(clearTimeout);
+    this.trackRefreshTimers = [];
+    this.lastKnownTrackCount = 0;
+
     if (this.unlisten) {
       this.unlisten();
       this.unlisten = null;

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import {
   cinemetaService,
@@ -47,6 +47,10 @@ export function PlayerPage() {
   const [subtitleUrl, setSubtitleUrl] = useState<string | null>(null);
   const [subtitleOffset, setSubtitleOffset] = useState(0);
   const [isLoadingSubtitles, setIsLoadingSubtitles] = useState(false);
+  const [hasEmbeddedSubtitleTracks, setHasEmbeddedSubtitleTracks] =
+    useState(false);
+  const [mpvSubtitleId, setMpvSubtitleId] = useState<string | null>(null);
+  const [mpvSubtitleOffset, setMpvSubtitleOffset] = useState(0);
 
   // Audio track state
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
@@ -75,8 +79,9 @@ export function PlayerPage() {
     preferredSubtitleLanguage,
   } = useSettingsStore();
 
-  let controlsTimeout: ReturnType<typeof setTimeout>;
   let progressSaveTimeout: ReturnType<typeof setTimeout> | undefined;
+  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isPlayingRef = useRef(false);
 
   // Generate CSS custom properties for subtitle styling (with fallbacks for older settings)
   const subtitleStyles = {
@@ -127,10 +132,23 @@ export function PlayerPage() {
     return () => {
       // Save progress when leaving
       saveProgress();
-      clearTimeout(controlsTimeout);
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
       clearTimeout(progressSaveTimeout);
     };
   }, [id, season, episode]);
+
+  useEffect(() => {
+    if (!id) return;
+
+    const savedProgress = getWatchProgress(
+      id,
+      season ? parseInt(season) : undefined,
+      episode ? parseInt(episode) : undefined,
+    );
+
+    setMpvSubtitleId(savedProgress?.subtitleId || null);
+    setMpvSubtitleOffset(savedProgress?.subtitleOffset || 0);
+  }, [id, season, episode, getWatchProgress]);
 
   // Keyboard controls
   useEffect(() => {
@@ -216,16 +234,55 @@ export function PlayerPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // Keep playing ref in sync
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
   useEffect(() => {
     // Hide controls after 3 seconds of inactivity
     if (showControls && isPlaying) {
-      controlsTimeout = setTimeout(() => {
+      controlsTimeoutRef.current = setTimeout(() => {
         setShowControls(false);
       }, 3000);
     }
 
-    return () => clearTimeout(controlsTimeout);
+    return () => {
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    };
   }, [showControls, isPlaying]);
+
+  const waitForVideoMetadata = async () => {
+    const video = videoRef.current;
+    if (!video || video.readyState >= 1) {
+      if (video) {
+        setHasEmbeddedSubtitleTracks(video.textTracks.length > 0);
+      }
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        video.removeEventListener("loadedmetadata", done);
+        video.removeEventListener("loadeddata", done);
+        resolve();
+      };
+
+      video.addEventListener("loadedmetadata", done, { once: true });
+      video.addEventListener("loadeddata", done, { once: true });
+
+      // Generous timeout for slow streaming connections
+      setTimeout(() => {
+        video.removeEventListener("loadedmetadata", done);
+        video.removeEventListener("loadeddata", done);
+        resolve();
+      }, 3000);
+    });
+
+    if (videoRef.current) {
+      setHasEmbeddedSubtitleTracks(videoRef.current.textTracks.length > 0);
+    }
+  };
 
   const initializePlayer = async () => {
     setIsLoading(true);
@@ -480,6 +537,19 @@ export function PlayerPage() {
       }
 
       setSubtitles(subs);
+
+      await waitForVideoMetadata();
+
+      const hasEmbeddedSubtitleTracks =
+        !!videoRef.current?.textTracks &&
+        videoRef.current.textTracks.length > 0;
+
+      if (hasEmbeddedSubtitleTracks) {
+        console.log(
+          "Embedded subtitles detected; prioritizing embedded tracks over addon autoload.",
+        );
+        return;
+      }
 
       // Check for saved subtitle preference
       const savedProgress = getWatchProgress(
@@ -776,9 +846,15 @@ export function PlayerPage() {
     }
   };
 
-  const handleMouseMove = () => {
+  const handleMouseMove = useCallback(() => {
     setShowControls(true);
-  };
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    controlsTimeoutRef.current = setTimeout(() => {
+      if (isPlayingRef.current) {
+        setShowControls(false);
+      }
+    }, 3000);
+  }, []);
 
   const formatTime = (seconds: number): string => {
     const h = Math.floor(seconds / 3600);
@@ -844,7 +920,7 @@ export function PlayerPage() {
 
   return (
     <div
-      className="player-page"
+      className={`player-page${!showControls && !useEmbeddedMpv ? " cursor-hidden" : ""}`}
       onMouseMove={handleMouseMove}
       style={subtitleStyles}
     >
@@ -919,6 +995,8 @@ export function PlayerPage() {
                 progress,
                 duration: Math.round(dur),
                 currentTime: Math.round(position),
+                subtitleId: mpvSubtitleId || undefined,
+                subtitleOffset: mpvSubtitleOffset,
                 torrentInfoHash: selectedTorrent?.infoHash,
                 torrentTitle: selectedTorrent?.title,
                 torrentQuality: selectedTorrent?.quality,
@@ -975,6 +1053,10 @@ export function PlayerPage() {
             }
           }}
           blurUnwatched={blurUnwatchedEpisodes}
+          initialSubtitleId={mpvSubtitleId}
+          initialSubtitleOffset={mpvSubtitleOffset}
+          onSubtitleSelectionChange={setMpvSubtitleId}
+          onSubtitleOffsetChange={setMpvSubtitleOffset}
         />
       )}
 
@@ -1101,6 +1183,9 @@ export function PlayerPage() {
               const videoDuration = videoRef.current?.duration || 0;
               setDuration(videoDuration);
               loadAudioTracks();
+              setHasEmbeddedSubtitleTracks(
+                (videoRef.current?.textTracks.length || 0) > 0,
+              );
 
               // Resume from saved position
               if (id && videoRef.current) {
@@ -1344,15 +1429,23 @@ export function PlayerPage() {
                       <span className="subtitle-loading-spinner" />
                     </span>
                   )}
-                  {!isLoadingSubtitles && subtitles.length > 0 && (
-                    <SubtitleSelector
-                      subtitles={subtitles}
-                      activeSubtitleId={activeSubtitle?.id || null}
-                      onSelect={handleSubtitleSelect}
-                      onTimingAdjust={handleSubtitleTimingAdjust}
-                      currentOffset={subtitleOffset}
-                    />
-                  )}
+                  {!isLoadingSubtitles &&
+                    (subtitles.length > 0 || hasEmbeddedSubtitleTracks) && (
+                      <SubtitleSelector
+                        subtitles={subtitles}
+                        activeSubtitleId={activeSubtitle?.id || null}
+                        activeSource={
+                          activeSubtitle
+                            ? "addon"
+                            : hasEmbeddedSubtitleTracks
+                              ? "embedded"
+                              : null
+                        }
+                        onSelect={handleSubtitleSelect}
+                        onTimingAdjust={handleSubtitleTimingAdjust}
+                        currentOffset={subtitleOffset}
+                      />
+                    )}
 
                   <button className="control-btn" onClick={toggleFullscreen}>
                     {isFullscreen ? "⊙" : "⛶"}

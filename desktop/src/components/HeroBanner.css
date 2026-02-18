@@ -3,18 +3,49 @@
   height: 75vh;
   min-height: 550px;
   max-height: 850px;
-  margin-bottom: 32px;
+  margin-bottom: 0;
   overflow: hidden;
+}
+
+/* Bottom fade — separate element so the backdrop scale() can't shift it */
+.hero-banner::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 62%;
+  background: linear-gradient(
+    to top,
+    rgba(5, 5, 7, 1) 0%,
+    rgba(5, 5, 7, 0.96) 12%,
+    rgba(5, 5, 7, 0.82) 26%,
+    rgba(5, 5, 7, 0.6) 42%,
+    rgba(5, 5, 7, 0.36) 58%,
+    rgba(5, 5, 7, 0.16) 72%,
+    rgba(5, 5, 7, 0.05) 84%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 1;
 }
 
 .hero-backdrop {
   position: absolute;
-  inset: 0;
+  inset: -2px;
   background-size: cover;
   background-position: center top;
   background-color: var(--bg-secondary);
   transform: scale(1.02);
-  transition: transform 8s ease-out;
+  transition:
+    transform 8s ease-out,
+    opacity 0.5s ease;
+  opacity: 1;
+  pointer-events: none;
+}
+
+.hero-backdrop-fade {
+  opacity: 0;
 }
 
 .hero-banner:hover .hero-backdrop {
@@ -33,9 +64,16 @@
       transparent 70%
     ),
     linear-gradient(
+      to left,
+      rgba(5, 5, 7, 0.7) 0%,
+      rgba(5, 5, 7, 0.3) 5%,
+      transparent 15%
+    ),
+    linear-gradient(
       to top,
       rgba(5, 5, 7, 1) 0%,
-      rgba(5, 5, 7, 0.6) 15%,
+      rgba(5, 5, 7, 0.7) 8%,
+      rgba(5, 5, 7, 0.3) 20%,
       transparent 40%
     ),
     radial-gradient(
@@ -43,6 +81,8 @@
       rgba(99, 102, 241, 0.15) 0%,
       transparent 50%
     );
+  pointer-events: none;
+  z-index: 1;
 }
 
 .hero-content {
@@ -50,8 +90,13 @@
   bottom: 18%;
   left: 56px;
   max-width: 650px;
-  z-index: 1;
-  animation: slideUp 0.8s ease-out;
+  z-index: 5;
+  transition: opacity 0.4s ease;
+  opacity: 1;
+}
+
+.hero-content-fade {
+  opacity: 0;
 }
 
 .hero-type {
@@ -76,7 +121,7 @@
   font-weight: 800;
   line-height: 1.15;
   padding-bottom: 0.08em;
-  margin-bottom: 20px;
+  margin-bottom: 0;
   letter-spacing: -0.03em;
   background: linear-gradient(
     180deg,
@@ -87,6 +132,27 @@
   -webkit-text-fill-color: transparent;
   background-clip: text;
   text-shadow: none;
+}
+
+.hero-logo {
+  display: block;
+  max-width: 420px;
+  max-height: 118px;
+  object-fit: contain;
+  margin-bottom: 0;
+  filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.7));
+}
+
+.hero-heading {
+  height: 128px;
+  display: flex;
+  align-items: flex-end;
+  margin-bottom: 20px;
+}
+
+.hero-title-pending {
+  width: 100%;
+  height: 118px;
 }
 
 .hero-meta {
@@ -196,6 +262,44 @@
   100% {
     background-position: -200% 0;
   }
+}
+
+/* Dot indicators */
+.hero-dots {
+  position: absolute;
+  bottom: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  z-index: 20;
+  pointer-events: auto;
+}
+
+.hero-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.3s ease;
+}
+
+.hero-dot:hover {
+  background: rgba(255, 255, 255, 0.8);
+  transform: scale(1.3);
+}
+
+.hero-dot-active {
+  background: white;
+  width: 24px;
+  border-radius: 5px;
+}
+
+.hero-dot-active:hover {
+  transform: none;
 }
 
 @media (max-width: 768px) {

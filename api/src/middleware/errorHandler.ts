@@ -1,5 +1,5 @@
 /**
- * Streamio API - Error Handling Middleware
+ * Vreamio API - Error Handling Middleware
  * Global error handler and async wrapper
  */
 

@@ -107,13 +107,21 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: false,
           error: null,
         });
+
+        // Clear profile and library data on logout
+        import("./profileStore").then(({ useProfileStore }) =>
+          useProfileStore.getState().clearAll(),
+        );
+        import("./libraryStore").then(({ useLibraryStore }) =>
+          useLibraryStore.getState().switchProfile(null),
+        );
       },
 
       setError: (error: string | null) => set({ error }),
       clearError: () => set({ error: null }),
     }),
     {
-      name: "streamio-auth",
+      name: "vreamio-auth",
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         user: state.user,

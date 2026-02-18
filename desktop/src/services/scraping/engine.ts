@@ -2,6 +2,7 @@ import { scrapers, Scraper } from "./scrapers.ts";
 import { TorrentResult, MediaQuery, ScrapingResult } from "./types";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { scrapingDebugger } from "./debugger";
+import { getFeatureGate } from "../../hooks/useFeatureGate";
 import {
   rankAndFilterTorrents,
   getConfigFromPreferences,
@@ -28,10 +29,15 @@ export class ScrapingEngine {
 
   async search(query: MediaQuery): Promise<ScrapingResult[]> {
     const settings = useSettingsStore.getState();
+    const { canUseNativeScrapers } = getFeatureGate();
+
     // Get enabled scrapers but exclude torrentio (handled separately as backup)
+    // Free users: skip native scrapers entirely — only addons run
     const enabledScrapers = scrapers.filter(
       (s: Scraper) =>
-        settings.enabledScrapers.includes(s.id) && s.id !== "torrentio",
+        settings.enabledScrapers.includes(s.id) &&
+        s.id !== "torrentio" &&
+        (canUseNativeScrapers || s.type === "addon"),
     );
 
     if (enabledScrapers.length === 0) {

@@ -7,9 +7,17 @@ interface MediaRowProps {
   title: string;
   items: MediaItem[];
   isLoading?: boolean;
+  variant?: "poster" | "landscape";
+  size?: "small" | "medium" | "large";
 }
 
-export function MediaRow({ title, items, isLoading = false }: MediaRowProps) {
+export function MediaRow({
+  title,
+  items,
+  isLoading = false,
+  variant = "poster",
+  size = "medium",
+}: MediaRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
 
   const scroll = (direction: "left" | "right") => {
@@ -23,13 +31,19 @@ export function MediaRow({ title, items, isLoading = false }: MediaRowProps) {
   };
 
   if (isLoading) {
+    const isLandscape = variant === "landscape";
     return (
       <section className="media-row">
         <h2 className="media-row-title">{title}</h2>
         <div className="media-row-items">
           {[...Array(6)].map((_, i) => (
-            <div key={i} className="media-card-skeleton">
-              <div className="skeleton-poster"></div>
+            <div
+              key={i}
+              className={`media-card-skeleton ${isLandscape ? "media-card-skeleton-landscape" : ""}`}
+            >
+              <div
+                className={`skeleton-poster ${isLandscape ? "skeleton-landscape" : ""}`}
+              ></div>
               <div className="skeleton-title"></div>
               <div className="skeleton-meta"></div>
             </div>
@@ -59,7 +73,12 @@ export function MediaRow({ title, items, isLoading = false }: MediaRowProps) {
 
       <div className="media-row-items" ref={rowRef}>
         {items.map((item) => (
-          <MediaCard key={`${item.type}-${item.id}`} item={item} />
+          <MediaCard
+            key={`${item.type}-${item.id}`}
+            item={item}
+            variant={variant}
+            size={size}
+          />
         ))}
       </div>
     </section>

@@ -122,7 +122,7 @@ const defaultSettings = {
   autoPlayNext: true,
   skipIntro: false,
   skipOutro: false,
-  playerType: "default" as PlayerType,
+  playerType: "embedded-mpv" as PlayerType,
   preferredAudioLanguage: "eng",
   preferredSubtitleLanguage: "eng",
   theme: "dark" as Theme,
@@ -347,10 +347,12 @@ export const useSettingsStore = create<SettingsState>()(
       // Sync settings with server
       syncWithServer: async () => {
         const { useAuthStore } = await import("./authStore");
+        const { useProfileStore } = await import("./profileStore");
         const authState = useAuthStore.getState();
         if (!authState.isAuthenticated || !authState.token) return;
 
         const state = get();
+        const profileId = useProfileStore.getState().activeProfileId;
         const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
         try {
@@ -361,6 +363,7 @@ export const useSettingsStore = create<SettingsState>()(
               Authorization: `Bearer ${authState.token}`,
             },
             body: JSON.stringify({
+              profileId,
               settings: {
                 activeDebridService: state.activeDebridService,
                 debridCredentials: state.debridCredentials,
@@ -388,13 +391,18 @@ export const useSettingsStore = create<SettingsState>()(
 
       loadFromServer: async () => {
         const { useAuthStore } = await import("./authStore");
+        const { useProfileStore } = await import("./profileStore");
         const authState = useAuthStore.getState();
         if (!authState.isAuthenticated || !authState.token) return;
 
+        const profileId = useProfileStore.getState().activeProfileId;
+        const profileQuery = profileId
+          ? `?profileId=${encodeURIComponent(profileId)}`
+          : "";
         const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
         try {
-          const res = await fetch(`${API_URL}/sync/settings`, {
+          const res = await fetch(`${API_URL}/sync/settings${profileQuery}`, {
             headers: {
               Authorization: `Bearer ${authState.token}`,
             },
@@ -412,7 +420,7 @@ export const useSettingsStore = create<SettingsState>()(
       },
     }),
     {
-      name: "streamio-settings",
+      name: "vreamio-settings",
       storage: createJSONStorage(() => localStorage),
     },
   ),

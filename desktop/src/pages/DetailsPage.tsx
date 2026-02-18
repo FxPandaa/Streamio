@@ -11,6 +11,8 @@ import {
 } from "../services";
 import { useLibraryStore, useSettingsStore } from "../stores";
 import { parseStreamInfo } from "../utils/streamParser";
+import { useValidatedImage } from "../utils/useValidatedImage";
+import { useFeatureGate } from "../hooks/useFeatureGate";
 import "./DetailsPage.css";
 
 type ContentType = "movie" | "series";
@@ -45,8 +47,10 @@ export function DetailsPage() {
     getWatchProgress,
   } = useLibraryStore();
   const { activeDebridService, blurUnwatchedEpisodes } = useSettingsStore();
+  const { canUseNativeScrapers } = useFeatureGate();
 
   const isMovie = type === "movie";
+  const validLogo = useValidatedImage(details?.logo);
   const inLibrary = details?.imdbId ? isInLibrary(details.imdbId) : false;
   const libraryItem = details?.imdbId
     ? library.find((item) => item.imdbId === details.imdbId)
@@ -242,30 +246,25 @@ export function DetailsPage() {
 
   return (
     <div className="details-page">
-      <div
-        className="details-backdrop"
-        style={{
-          backgroundImage: details.backdrop
-            ? `url(${details.backdrop})`
-            : "none",
-        }}
-      >
-        <div className="details-backdrop-overlay"></div>
-      </div>
-
-      <div className="details-content">
-        <div className="details-poster">
-          {details.poster ? (
-            <img src={details.poster} alt={details.title} />
-          ) : (
-            <div className="details-poster-placeholder">
-              {isMovie ? "🎬" : "📺"}
-            </div>
-          )}
+      {/* Full-screen backdrop hero */}
+      <div className="details-hero">
+        <div
+          className="details-backdrop"
+          style={{
+            backgroundImage: details.backdrop
+              ? `url(${details.backdrop})`
+              : "none",
+          }}
+        >
+          <div className="details-backdrop-overlay"></div>
         </div>
 
-        <div className="details-info">
-          <h1 className="details-title">{details.title}</h1>
+        <div className="details-hero-content">
+          {validLogo ? (
+            <img className="details-logo" src={validLogo} alt={details.title} />
+          ) : (
+            <h1 className="details-title">{details.title}</h1>
+          )}
 
           <div className="details-meta">
             <span className="meta-item">{details.year}</span>
@@ -344,13 +343,18 @@ export function DetailsPage() {
               {isSearchingTorrents
                 ? "Searching..."
                 : activeDebridService === "none"
-                  ? "⚙️ Setup Debrid First"
-                  : "🔍 Find Sources"}
+                  ? "Setup Debrid First"
+                  : "Find Sources"}
             </button>
           </div>
+        </div>
+      </div>
 
-          {/* User rating, tags, notes - only show if in library */}
-          {inLibrary && (
+      {/* Scrollable content below the hero */}
+      <div className="details-sections">
+        {/* User rating, tags, notes - only show if in library */}
+        {inLibrary && (
+          <div className="details-section">
             <div className="details-user-content">
               <div className="user-rating">
                 <h4>Your Rating</h4>
@@ -371,10 +375,12 @@ export function DetailsPage() {
                 </div>
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Collections - only show if in library */}
-          {inLibrary && collections.length > 0 && (
+        {/* Collections - only show if in library */}
+        {inLibrary && collections.length > 0 && (
+          <div className="details-section">
             <div className="details-collections">
               <h4>Collections</h4>
               <div className="collections-checkboxes">
@@ -400,10 +406,12 @@ export function DetailsPage() {
                 })}
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Cast */}
-          {details.cast && details.cast.length > 0 && (
+        {/* Cast */}
+        {details.cast && details.cast.length > 0 && (
+          <div className="details-section">
             <div className="details-cast">
               <h3>Cast</h3>
               <div className="cast-list">
@@ -414,151 +422,163 @@ export function DetailsPage() {
                 ))}
               </div>
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        )}
 
-      {/* Episodes for series */}
-      {!isMovie &&
-        seriesDetails.seasons &&
-        seriesDetails.seasons.length > 0 && (
-          <div className="details-episodes">
-            <div className="episodes-header">
-              <h2>Episodes</h2>
-              <select
-                value={selectedSeason}
-                onChange={(e) => setSelectedSeason(parseInt(e.target.value))}
-                className="season-select"
-              >
-                {seriesDetails.seasons
-                  .filter((s) => s.seasonNumber > 0)
-                  .map((season) => (
-                    <option key={season.id} value={season.seasonNumber}>
-                      Season {season.seasonNumber}
-                    </option>
-                  ))}
-              </select>
-            </div>
+        {/* Episodes for series */}
+        {!isMovie &&
+          seriesDetails.seasons &&
+          seriesDetails.seasons.length > 0 && (
+            <div className="details-section details-episodes">
+              <div className="episodes-header">
+                <h2>Episodes</h2>
+                <select
+                  value={selectedSeason}
+                  onChange={(e) => setSelectedSeason(parseInt(e.target.value))}
+                  className="season-select"
+                >
+                  {seriesDetails.seasons
+                    .filter((s) => s.seasonNumber > 0)
+                    .map((season) => (
+                      <option key={season.id} value={season.seasonNumber}>
+                        Season {season.seasonNumber}
+                      </option>
+                    ))}
+                </select>
+              </div>
 
-            <div className="episodes-list">
-              {episodes.map((episode) => {
-                // Check if episode has been watched (progress > 0 means started)
-                const watchProgress = id
-                  ? getWatchProgress(id, selectedSeason, episode.episodeNumber)
-                  : undefined;
-                // Episode is considered watched if it has any progress (including finished episodes)
-                const isWatched = watchProgress && watchProgress.progress > 0;
-                const shouldBlur =
-                  blurUnwatchedEpisodes && !isWatched && episode.still;
-
-                return (
-                  <div
-                    key={episode.id}
-                    className="episode-card"
-                    onClick={() =>
-                      handlePlay(
-                        undefined,
+              <div className="episodes-list">
+                {episodes.map((episode) => {
+                  const watchProgress = id
+                    ? getWatchProgress(
+                        id,
                         selectedSeason,
                         episode.episodeNumber,
                       )
-                    }
-                  >
+                    : undefined;
+                  const isWatched = watchProgress && watchProgress.progress > 0;
+                  const shouldBlur =
+                    blurUnwatchedEpisodes && !isWatched && episode.still;
+
+                  return (
                     <div
-                      className={`episode-thumbnail ${shouldBlur ? "episode-thumbnail-blur" : ""}`}
+                      key={episode.id}
+                      className="episode-card"
+                      onClick={() =>
+                        handlePlay(
+                          undefined,
+                          selectedSeason,
+                          episode.episodeNumber,
+                        )
+                      }
                     >
-                      {episode.still ? (
-                        <img src={episode.still} alt={episode.name} />
-                      ) : (
-                        <div className="episode-placeholder">📺</div>
-                      )}
-                      <div className="episode-play">▶</div>
-                      {watchProgress && watchProgress.progress > 0 && (
-                        <div className="episode-progress-bar">
-                          <div
-                            className="episode-progress-fill"
-                            style={{ width: `${watchProgress.progress}%` }}
-                          />
-                        </div>
-                      )}
+                      <div
+                        className={`episode-thumbnail ${shouldBlur ? "episode-thumbnail-blur" : ""}`}
+                      >
+                        {episode.still ? (
+                          <img src={episode.still} alt={episode.name} />
+                        ) : (
+                          <div className="episode-placeholder">📺</div>
+                        )}
+                        <div className="episode-play">▶</div>
+                        {watchProgress && watchProgress.progress > 0 && (
+                          <div className="episode-progress-bar">
+                            <div
+                              className="episode-progress-fill"
+                              style={{ width: `${watchProgress.progress}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <div className="episode-info">
+                        <span className="episode-number">
+                          E{episode.episodeNumber}
+                        </span>
+                        <h4 className="episode-name">{episode.name}</h4>
+                        {episode.overview && (
+                          <p className="episode-overview">{episode.overview}</p>
+                        )}
+                      </div>
                     </div>
-                    <div className="episode-info">
-                      <span className="episode-number">
-                        E{episode.episodeNumber}
-                      </span>
-                      <h4 className="episode-name">{episode.name}</h4>
-                      {episode.overview && (
-                        <p className="episode-overview">{episode.overview}</p>
-                      )}
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+        {/* Free tier upsell banner */}
+        {!canUseNativeScrapers && torrents.length > 0 && (
+          <div className="free-tier-upsell">
+            <span>
+              Found {torrents.length} result{torrents.length !== 1 ? "s" : ""}{" "}
+              from 1 addon source
+            </span>
+            <Link to="/settings" className="upsell-link">
+              Vreamio+ searches 12 sources →
+            </Link>
+          </div>
+        )}
+
+        {/* Torrent results */}
+        {torrents.length > 0 && (
+          <div className="details-section details-torrents">
+            <h2>Available Sources ({torrents.length})</h2>
+            <div className="torrents-list">
+              {torrents.map((torrent) => {
+                const info = parseStreamInfo(torrent.title);
+                return (
+                  <div
+                    key={torrent.id}
+                    className="torrent-card"
+                    onClick={() => handleTorrentClick(torrent)}
+                  >
+                    <div className="torrent-info">
+                      <span className="torrent-title">{torrent.title}</span>
+                      <div className="torrent-badges">
+                        <span
+                          className={`badge badge-resolution ${info.resolutionBadge === "4K" ? "badge-4k" : ""}`}
+                        >
+                          {info.resolutionBadge}
+                        </span>
+                        {info.hasDolbyVision && (
+                          <span className="badge badge-hdr badge-dv">DV</span>
+                        )}
+                        {info.hasHDR10Plus && (
+                          <span className="badge badge-hdr badge-hdr10plus">
+                            HDR10+
+                          </span>
+                        )}
+                        {info.isHDR &&
+                          !info.hasDolbyVision &&
+                          !info.hasHDR10Plus && (
+                            <span className="badge badge-hdr">
+                              {info.hdrType}
+                            </span>
+                          )}
+                        {info.videoCodec && (
+                          <span className="badge badge-codec">
+                            {info.videoCodec}
+                          </span>
+                        )}
+                        {info.hasAtmos && (
+                          <span className="badge badge-atmos">Atmos</span>
+                        )}
+                        <span className="torrent-size">
+                          {torrent.sizeFormatted}
+                        </span>
+                        <span className="torrent-seeds">↑ {torrent.seeds}</span>
+                      </div>
                     </div>
+                    {instantAvailability.get(torrent.infoHash) && (
+                      <span className="instant-badge">⚡ Instant</span>
+                    )}
                   </div>
                 );
               })}
             </div>
           </div>
         )}
-
-      {/* Torrent results */}
-      {torrents.length > 0 && (
-        <div className="details-torrents">
-          <h2>Available Sources ({torrents.length})</h2>
-          <div className="torrents-list">
-            {torrents.map((torrent) => {
-              const info = parseStreamInfo(torrent.title);
-              return (
-                <div
-                  key={torrent.id}
-                  className="torrent-card"
-                  onClick={() => handleTorrentClick(torrent)}
-                >
-                  <div className="torrent-info">
-                    <span className="torrent-title">{torrent.title}</span>
-                    <div className="torrent-badges">
-                      <span
-                        className={`badge badge-resolution ${info.resolutionBadge === "4K" ? "badge-4k" : ""}`}
-                      >
-                        {info.resolutionBadge}
-                      </span>
-                      {/* Show DV badge if present */}
-                      {info.hasDolbyVision && (
-                        <span className="badge badge-hdr badge-dv">DV</span>
-                      )}
-                      {/* Show HDR10+ badge if present (separate from DV for dual-layer) */}
-                      {info.hasHDR10Plus && (
-                        <span className="badge badge-hdr badge-hdr10plus">
-                          HDR10+
-                        </span>
-                      )}
-                      {/* Show HDR10 or HLG if no DV/HDR10+ */}
-                      {info.isHDR &&
-                        !info.hasDolbyVision &&
-                        !info.hasHDR10Plus && (
-                          <span className="badge badge-hdr">
-                            {info.hdrType}
-                          </span>
-                        )}
-                      {info.videoCodec && (
-                        <span className="badge badge-codec">
-                          {info.videoCodec}
-                        </span>
-                      )}
-                      {info.hasAtmos && (
-                        <span className="badge badge-atmos">Atmos</span>
-                      )}
-                      <span className="torrent-size">
-                        {torrent.sizeFormatted}
-                      </span>
-                      <span className="torrent-seeds">↑ {torrent.seeds}</span>
-                    </div>
-                  </div>
-                  {instantAvailability.get(torrent.infoHash) && (
-                    <span className="instant-badge">⚡ Instant</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

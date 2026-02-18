@@ -58,7 +58,7 @@ export function LoginPage() {
       <div className="login-container">
         <Link to="/" className="login-logo">
           <span className="logo-icon">▶</span>
-          <span className="logo-text">Streamio</span>
+          <span className="logo-text">Vreamio</span>
         </Link>
 
         <div className="login-form-container">
@@ -119,7 +119,7 @@ export function LoginPage() {
 
             <button
               type="submit"
-              className="btn btn-primary login-btn"
+              className="btn btn-primary login-submit-btn"
               disabled={isLoading}
             >
               {isLoading

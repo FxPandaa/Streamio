@@ -1,5 +1,5 @@
 /**
- * Streamio API - Middleware Index
+ * Vreamio API - Middleware Index
  * Re-export all middleware for convenient importing
  */
 

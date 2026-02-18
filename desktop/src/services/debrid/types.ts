@@ -73,6 +73,13 @@ export const DEBRID_CONFIGS: Record<string, DebridServiceConfig> = {
     website: "https://alldebrid.com",
     supportsInstant: true,
   },
+  torbox: {
+    id: "torbox",
+    name: "TorBox",
+    apiBaseUrl: "https://api.torbox.app/v1/api",
+    website: "https://torbox.app",
+    supportsInstant: true,
+  },
   premiumize: {
     id: "premiumize",
     name: "Premiumize",

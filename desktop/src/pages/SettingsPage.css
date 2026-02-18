@@ -2,7 +2,6 @@
   padding: 32px 56px;
   max-width: 900px;
   margin: 0 auto;
-  animation: fadeIn 0.5s ease-out;
 }
 
 .settings-page > h1 {
@@ -39,6 +38,44 @@
 }
 
 /* Debrid Services */
+.debrid-compact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0 10px;
+}
+
+.debrid-compact-info label {
+  font-size: 15px;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.debrid-compact-info p {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+.debrid-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.debrid-chip {
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  background: var(--bg-glass);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .debrid-list {
   display: flex;
   flex-direction: column;
@@ -132,6 +169,30 @@
 
 .api-key-input .input {
   flex: 1;
+}
+
+.debrid-modal {
+  max-width: 680px;
+}
+
+.debrid-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.debrid-provider-select {
+  width: 240px;
+}
+
+.debrid-managed-note {
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  color: var(--text-secondary);
+  font-size: 14px;
 }
 
 .validation-error {
@@ -292,29 +353,63 @@
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  animation: fadeIn 0.2s ease-out;
 }
 
 .modal-content {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  background: rgba(14, 14, 18, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
   border-radius: var(--radius-xl);
   max-width: 600px;
   width: 90%;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  animation: slideUp 0.3s ease-out;
+  overflow: hidden;
+  background-clip: padding-box;
+  animation: modalContentReveal 0.24s var(--transition-normal);
 }
 
-@keyframes slideUp {
+.debrid-modal-overlay {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.12s var(--transition-fast),
+    visibility 0s linear 0.12s;
+}
+
+.debrid-modal-overlay.open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity 0.12s var(--transition-fast),
+    visibility 0s linear 0s;
+}
+
+.debrid-modal-content {
+  animation: none;
+  opacity: 0;
+  transform: scale(0.995);
+  transition:
+    opacity 0.16s var(--transition-fast),
+    transform 0.16s var(--transition-fast);
+}
+
+.debrid-modal-overlay.open .debrid-modal-content {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@keyframes modalContentReveal {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: scale(0.985);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: scale(1);
   }
 }
 
@@ -562,4 +657,169 @@
   .slider-with-value input[type="range"] {
     width: 100%;
   }
+}
+
+/* ============================================================================
+   SUBSCRIPTION SECTION
+   ============================================================================ */
+
+.subscription-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 24px;
+  margin-top: 16px;
+}
+
+.subscription-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.subscription-status-row:last-of-type {
+  border-bottom: none;
+}
+
+.subscription-label {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 500;
+}
+
+.subscription-value {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+}
+
+.subscription-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0.02em;
+}
+
+.subscription-actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.subscription-hint {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0;
+  font-style: italic;
+}
+
+.subscription-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(244, 67, 54, 0.1);
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-top: 12px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #f44336;
+}
+
+.subscription-error .btn-ghost {
+  padding: 4px 8px;
+  min-width: unset;
+  font-size: 16px;
+}
+
+/* Tier Display */
+.tier-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.tier-badge {
+  display: inline-block;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.tier-badge.tier-free {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.tier-badge.tier-plus {
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: #fff;
+}
+
+.tier-renews {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.tier-canceling {
+  font-size: 13px;
+  color: #f5a623;
+  font-style: italic;
+}
+
+/* Feature Comparison */
+.tier-features {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tier-feature {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.tier-feature-locked {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.tier-feature-icon {
+  font-size: 16px;
+  width: 24px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* Vreamio+ Badge */
+.vreamio-plus-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  border-radius: 10px;
+  vertical-align: middle;
+  letter-spacing: 0.3px;
 }

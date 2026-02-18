@@ -1,6 +1,6 @@
-# MPV Binaries (Bundled with Streamio)
+# MPV Binaries (Bundled with Vreamio)
 
-MPV player is bundled with Streamio for seamless video playback with full audio/subtitle track support.
+MPV player is bundled with Vreamio for seamless video playback with full audio/subtitle track support.
 
 ## Current Version
 

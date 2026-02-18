@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { useLibraryStore } from "../stores";
 import { MediaCard } from "../components";
 import { MediaItem } from "../services";
+import { useValidatedImage } from "../utils/useValidatedImage";
+import type { WatchHistoryItem } from "../stores/libraryStore";
 import "./LibraryPage.css";
 
 export function LibraryPage() {
@@ -262,45 +264,7 @@ export function LibraryPage() {
               })
               .slice(0, 10)
               .map((item) => {
-                const playerUrl =
-                  item.type === "movie"
-                    ? `/player/movie/${item.imdbId}`
-                    : `/player/series/${item.imdbId}/${item.season}/${item.episode}`;
-
-                return (
-                  <Link key={item.id} to={playerUrl} className="history-item">
-                    <div className="history-poster">
-                      {item.poster ? (
-                        <img src={item.poster} alt={item.title} />
-                      ) : (
-                        <div className="history-placeholder">
-                          {item.type === "movie" ? "🎬" : "📺"}
-                        </div>
-                      )}
-                      <div className="history-progress">
-                        <div
-                          className="history-progress-fill"
-                          style={{ width: `${item.progress}%` }}
-                        />
-                      </div>
-                    </div>
-                    <div className="history-info">
-                      <h4>{item.title}</h4>
-                      {item.type === "series" &&
-                        item.season &&
-                        item.episode && (
-                          <span className="history-episode">
-                            S{item.season.toString().padStart(2, "0")}E
-                            {item.episode.toString().padStart(2, "0")}
-                            {item.episodeTitle && ` - ${item.episodeTitle}`}
-                          </span>
-                        )}
-                      <span className="history-progress-text">
-                        {item.progress}% watched
-                      </span>
-                    </div>
-                  </Link>
-                );
+                return <HistoryWatchItem key={item.id} item={item} />;
               })}
           </div>
         ) : (
@@ -310,5 +274,49 @@ export function LibraryPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function HistoryWatchItem({ item }: { item: WatchHistoryItem }) {
+  const [posterError, setPosterError] = useState(false);
+  const validPoster = useValidatedImage(item.poster || null);
+  const playerUrl =
+    item.type === "movie"
+      ? `/player/movie/${item.imdbId}`
+      : `/player/series/${item.imdbId}/${item.season}/${item.episode}`;
+
+  return (
+    <Link to={playerUrl} className="history-item">
+      <div className="history-poster">
+        {validPoster && !posterError ? (
+          <img
+            src={validPoster}
+            alt={item.title}
+            onError={() => setPosterError(true)}
+          />
+        ) : (
+          <div className="history-placeholder">
+            {item.type === "movie" ? "🎬" : "📺"}
+          </div>
+        )}
+        <div className="history-progress">
+          <div
+            className="history-progress-fill"
+            style={{ width: `${item.progress}%` }}
+          />
+        </div>
+      </div>
+      <div className="history-info">
+        <h4>{item.title}</h4>
+        {item.type === "series" && item.season && item.episode && (
+          <span className="history-episode">
+            S{item.season.toString().padStart(2, "0")}E
+            {item.episode.toString().padStart(2, "0")}
+            {item.episodeTitle && ` - ${item.episodeTitle}`}
+          </span>
+        )}
+        <span className="history-progress-text">{item.progress}% watched</span>
+      </div>
+    </Link>
   );
 }

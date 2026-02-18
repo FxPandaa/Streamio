@@ -1,7 +1,7 @@
 {
-  "name": "streamio-api",
+  "name": "vreamio-api",
   "version": "1.0.0",
-  "description": "Streamio Backend API - Cross-platform streaming service",
+  "description": "Vreamio Backend API - Cross-platform streaming service",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
@@ -16,7 +16,7 @@
     "debrid",
     "media"
   ],
-  "author": "Streamio",
+  "author": "Vreamio",
   "license": "MIT",
   "dependencies": {
     "axios": "^1.7.9",
@@ -28,6 +28,7 @@
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
     "jsonwebtoken": "^9.0.2",
+    "stripe": "^20.3.1",
     "uuid": "^11.0.5",
     "zod": "^3.24.1"
   },

@@ -90,6 +90,15 @@
   width: 50%;
 }
 
+/* Landscape skeleton */
+.media-card-skeleton-landscape {
+  width: 300px;
+}
+
+.skeleton-landscape {
+  aspect-ratio: 16/9 !important;
+}
+
 @keyframes shimmer {
   0% {
     background-position: -200% 0;

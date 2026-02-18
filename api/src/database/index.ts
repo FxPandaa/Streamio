@@ -1,5 +1,5 @@
 /**
- * Streamio API - Database Management
+ * Vreamio API - Database Management
  * SQLite database with better-sqlite3 for synchronous, fast operations
  */
 
@@ -152,6 +152,126 @@ function createTables(database: Database.Database): void {
       updated_at TEXT DEFAULT (datetime('now'))
     );
   `);
+
+  // =========================================================================
+  // BILLING & VENDOR PROVISIONING TABLES
+  // =========================================================================
+
+  // Subscriptions table (one per user)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      stripe_customer_id TEXT,
+      stripe_subscription_id TEXT UNIQUE,
+      status TEXT NOT NULL DEFAULT 'not_subscribed',
+      plan TEXT NOT NULL DEFAULT 'standard',
+      current_period_start TEXT,
+      current_period_end TEXT,
+      cancel_at_period_end INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
+    CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe_sub ON subscriptions(stripe_subscription_id);
+  `);
+
+  // TorBox vendor users table (maps our users to TorBox vendor accounts)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS torbox_users (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      subscription_id TEXT REFERENCES subscriptions(id),
+      vendor_user_auth_id TEXT,
+      torbox_email TEXT NOT NULL,
+      torbox_api_token_encrypted TEXT,
+      status TEXT NOT NULL DEFAULT 'pending_provision',
+      provision_attempts INTEGER DEFAULT 0,
+      last_provision_attempt TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      revoked_at TEXT,
+      UNIQUE(user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_torbox_users_user_id ON torbox_users(user_id);
+    CREATE INDEX IF NOT EXISTS idx_torbox_users_status ON torbox_users(status);
+    CREATE INDEX IF NOT EXISTS idx_torbox_users_auth_id ON torbox_users(vendor_user_auth_id);
+  `);
+
+  // Audit log for billing events
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT,
+      event_type TEXT NOT NULL,
+      event_data TEXT,
+      correlation_id TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_event_type ON audit_log(event_type);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at);
+  `);
+
+  // Vendor capacity snapshots
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS vendor_capacity (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      users_allowed INTEGER NOT NULL,
+      current_users INTEGER NOT NULL,
+      vendor_status TEXT NOT NULL,
+      recorded_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Stripe webhook idempotency table
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS webhook_events (
+      event_id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      processed_at TEXT DEFAULT (datetime('now')),
+      result TEXT
+    );
+  `);
+
+  // =========================================================================
+  // USER PROFILES TABLE (up to 8 per account)
+  // =========================================================================
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS profiles (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      avatar_color TEXT NOT NULL DEFAULT '#6366f1',
+      avatar_icon TEXT NOT NULL DEFAULT '😊',
+      is_kid INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_profiles_user_id ON profiles(user_id);
+  `);
+
+  // Add profile_id column to library, watch_history, collections, user_settings
+  // (nullable so existing data still works; new data will always have a profile_id)
+  const addProfileIdColumn = (table: string) => {
+    const cols = database.prepare(`PRAGMA table_info(${table})`).all() as {
+      name: string;
+    }[];
+    if (!cols.find((c) => c.name === "profile_id")) {
+      database.exec(
+        `ALTER TABLE ${table} ADD COLUMN profile_id TEXT REFERENCES profiles(id) ON DELETE CASCADE`,
+      );
+      database.exec(
+        `CREATE INDEX IF NOT EXISTS idx_${table}_profile_id ON ${table}(profile_id)`,
+      );
+    }
+  };
+
+  addProfileIdColumn("library");
+  addProfileIdColumn("watch_history");
+  addProfileIdColumn("collections");
+  addProfileIdColumn("user_settings");
 
   // Extended library table with full metadata for sync (add columns if they don't exist)
   const libraryColumns = database

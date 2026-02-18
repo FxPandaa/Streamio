@@ -4,6 +4,8 @@
   align-items: center;
   justify-content: center;
   position: relative;
+  animation: loginSceneFadeIn 0.32s ease-out;
+  will-change: opacity;
 }
 
 .login-background {
@@ -28,7 +30,6 @@
   width: 100%;
   max-width: 420px;
   padding: 32px;
-  animation: scaleIn 0.5s ease-out;
 }
 
 .login-logo {
@@ -109,7 +110,7 @@
   text-align: center;
 }
 
-.login-btn {
+.login-submit-btn {
   width: 100%;
   padding: 16px;
   margin-top: 12px;
@@ -164,4 +165,13 @@
   margin-top: 16px;
   color: var(--text-muted);
   font-size: 12px;
+}
+
+@keyframes loginSceneFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }

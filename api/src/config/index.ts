@@ -1,5 +1,5 @@
 /**
- * Streamio API - Configuration Management
+ * Vreamio API - Configuration Management
  * Simplified configuration for account sync backend
  */
 
@@ -40,7 +40,7 @@ export const config = {
   jwt: {
     secret: getEnvVar(
       "JWT_SECRET",
-      "streamio-dev-secret-change-in-production-32chars",
+      "vreamio-dev-secret-change-in-production-32chars",
     ),
     expiresIn: getEnvVar("JWT_EXPIRES_IN", "7d"),
     refreshExpiresIn: getEnvVar("JWT_REFRESH_EXPIRES_IN", "30d"),
@@ -48,7 +48,7 @@ export const config = {
 
   // Database Configuration
   database: {
-    path: getEnvVar("DATABASE_PATH", "./data/streamio.db"),
+    path: getEnvVar("DATABASE_PATH", "./data/vreamio.db"),
   },
 
   // CORS Configuration
@@ -74,15 +74,81 @@ export const config = {
   cinemeta: {
     baseUrl: "https://v3-cinemeta.strem.io",
   },
+
+  // Stripe Configuration (billing)
+  stripe: {
+    secretKey: getEnvVar("STRIPE_SECRET_KEY", "sk_test_placeholder"),
+    webhookSecret: getEnvVar("STRIPE_WEBHOOK_SECRET", "whsec_placeholder"),
+    priceId: getEnvVar("STRIPE_PRICE_ID", "price_placeholder"),
+    successUrl: getEnvVar(
+      "STRIPE_SUCCESS_URL",
+      "http://localhost:1420/settings?payment=success",
+    ),
+    cancelUrl: getEnvVar(
+      "STRIPE_CANCEL_URL",
+      "http://localhost:1420/settings?payment=canceled",
+    ),
+  },
+
+  // TorBox Vendor Configuration
+  torbox: {
+    vendorApiKey: getEnvVar("TORBOX_VENDOR_API_KEY", ""),
+    encryptionKey: getEnvVar(
+      "TORBOX_ENCRYPTION_KEY",
+      "vreamio-dev-encryption-key-change-in-prod",
+    ),
+  },
+
+  // Internal/Operator API
+  internal: {
+    apiKey: getEnvVar("INTERNAL_API_KEY", ""),
+  },
 } as const;
+
+// Known dev-only placeholder values that MUST be overridden in production
+const DEV_PLACEHOLDERS = [
+  "vreamio-dev-secret-change-in-production-32chars",
+  "vreamio-dev-encryption-key-change-in-prod",
+];
 
 // Validate critical configuration on startup
 export function validateConfig(): void {
   const errors: string[] = [];
 
-  // JWT secret should be strong in production
-  if (config.server.isProduction && config.jwt.secret.length < 32) {
-    errors.push("JWT_SECRET must be at least 32 characters in production");
+  // JWT secret must be strong and NOT the dev placeholder in production
+  if (config.server.isProduction) {
+    if (config.jwt.secret.length < 32) {
+      errors.push("JWT_SECRET must be at least 32 characters in production");
+    }
+    if (DEV_PLACEHOLDERS.includes(config.jwt.secret)) {
+      errors.push(
+        "JWT_SECRET is still the dev placeholder — set a unique secret in production",
+      );
+    }
+  }
+
+  // Encryption key must be strong and NOT the dev placeholder in production
+  if (config.server.isProduction) {
+    if (config.torbox.encryptionKey.length < 32) {
+      errors.push(
+        "TORBOX_ENCRYPTION_KEY must be at least 32 characters in production",
+      );
+    }
+    if (DEV_PLACEHOLDERS.includes(config.torbox.encryptionKey)) {
+      errors.push(
+        "TORBOX_ENCRYPTION_KEY is still the dev placeholder — set a unique key in production",
+      );
+    }
+  }
+
+  // Stripe should be configured in production
+  if (config.server.isProduction) {
+    if (config.stripe.secretKey === "sk_test_placeholder") {
+      errors.push("STRIPE_SECRET_KEY must be set in production");
+    }
+    if (config.stripe.webhookSecret === "whsec_placeholder") {
+      errors.push("STRIPE_WEBHOOK_SECRET must be set in production");
+    }
   }
 
   if (errors.length > 0) {

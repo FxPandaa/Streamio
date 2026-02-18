@@ -1,5 +1,5 @@
 /**
- * Streamio API - Watch History Routes
+ * Vreamio API - Watch History Routes
  * Track viewing progress across all platforms
  */
 

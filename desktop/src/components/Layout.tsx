@@ -1,12 +1,17 @@
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useAuthStore } from "../stores/authStore";
+import { useProfileStore } from "../stores/profileStore";
 import "./Layout.css";
 
 export function Layout() {
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
+  const location = useLocation();
   const { isAuthenticated, user, logout } = useAuthStore();
+  const activeProfile = useProfileStore(
+    (s) => s.profiles.find((p) => p.id === s.activeProfileId) || null,
+  );
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,13 +25,15 @@ export function Layout() {
     navigate("/");
   };
 
+  const isPlayer = location.pathname.startsWith("/player");
+
   return (
-    <div className="layout">
-      <header className="header">
+    <div className={`layout${isPlayer ? " layout--player" : ""}`}>
+      <header className={`header${isPlayer ? " header--hidden" : ""}`}>
         <nav className="nav">
           <NavLink to="/" className="logo">
             <span className="logo-icon">▶</span>
-            <span className="logo-text">Streamio</span>
+            <span className="logo-text">Vreamio</span>
           </NavLink>
 
           <div className="nav-links">
@@ -56,15 +63,27 @@ export function Layout() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-            <button type="submit" className="search-btn">
-              🔍
-            </button>
           </form>
 
           <div className="nav-right">
             <NavLink to="/settings" className="settings-btn">
               ⚙️
             </NavLink>
+
+            {activeProfile && (
+              <NavLink
+                to="/profiles"
+                className="profile-nav-btn"
+                title={activeProfile.name}
+              >
+                <span
+                  className="profile-nav-avatar"
+                  style={{ background: activeProfile.avatarColor }}
+                >
+                  {activeProfile.avatarIcon}
+                </span>
+              </NavLink>
+            )}
 
             {isAuthenticated ? (
               <div className="user-menu">
@@ -74,7 +93,7 @@ export function Layout() {
                 </button>
               </div>
             ) : (
-              <NavLink to="/login" className="login-btn">
+              <NavLink to="/login" className="header-login-btn">
                 Sign In
               </NavLink>
             )}
@@ -83,7 +102,9 @@ export function Layout() {
       </header>
 
       <main className="main-content">
-        <Outlet />
+        <div key={location.pathname} className="route-content">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

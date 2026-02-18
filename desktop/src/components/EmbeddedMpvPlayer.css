@@ -590,3 +590,375 @@ body:has(.embedded-mpv-player) .app-header {
 .embedded-mpv-episode-thumbnail.blur img {
   filter: blur(8px);
 }
+
+/* ==========================================
+   Audio Button styling
+   ========================================== */
+.embedded-mpv-btn--audio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 20px;
+  transition: all 0.2s ease;
+}
+
+.embedded-mpv-btn--audio-multi {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.embedded-mpv-audio-icon {
+  font-size: 14px;
+}
+
+.embedded-mpv-audio-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Audio panel is narrower since it has less content */
+.embedded-mpv-audio-panel {
+  width: 360px;
+}
+
+/* ==========================================
+   CC Button with status indicator
+   ========================================== */
+.embedded-mpv-btn--cc {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 20px;
+  transition: all 0.2s ease;
+}
+
+.embedded-mpv-btn--cc-active {
+  border: 1px solid rgba(139, 92, 246, 0.6);
+  background: rgba(139, 92, 246, 0.2) !important;
+}
+
+.embedded-mpv-btn--cc-active .embedded-mpv-cc-icon {
+  background: #8b5cf6;
+  color: white;
+}
+
+.embedded-mpv-cc-icon {
+  font-weight: 700;
+  font-size: 11px;
+  padding: 3px 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.embedded-mpv-cc-status {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 600;
+  min-width: 24px;
+  text-align: center;
+}
+
+.embedded-mpv-btn--cc-active .embedded-mpv-cc-status {
+  color: #a78bfa;
+}
+
+/* ==========================================
+   Subtitle Panel Overlay (matches SubtitleSelector)
+   ========================================== */
+.embedded-mpv-subtitle-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+}
+
+.embedded-mpv-subtitle-panel {
+  position: fixed;
+  bottom: 100px;
+  right: 32px;
+  width: 420px;
+  max-height: 70vh;
+  background: rgba(15, 15, 20, 0.95);
+  border-radius: 16px;
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: mpvSubPanelIn 0.25s ease-out;
+  pointer-events: auto;
+}
+
+@keyframes mpvSubPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.embedded-mpv-subtitle-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.embedded-mpv-subtitle-panel__header h3 {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0;
+  color: white;
+  letter-spacing: -0.02em;
+}
+
+.embedded-mpv-subtitle-panel__close {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 18px;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.embedded-mpv-subtitle-panel__close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  transform: rotate(90deg);
+}
+
+/* Scrollable list */
+.embedded-mpv-subtitle-panel__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.embedded-mpv-subtitle-panel__list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.embedded-mpv-subtitle-panel__list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.embedded-mpv-subtitle-panel__list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.embedded-mpv-subtitle-panel__list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Individual subtitle item */
+.embedded-mpv-subtitle-panel__item {
+  width: 100%;
+  padding: 14px 18px;
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+  color: white;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+}
+
+.embedded-mpv-subtitle-panel__item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.embedded-mpv-subtitle-panel__item.active {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
+  color: white !important;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+.embedded-mpv-subtitle-panel__item.active::after {
+  content: "✓";
+  font-size: 16px;
+  font-weight: bold;
+  color: white;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.embedded-mpv-subtitle-panel__item.active .embedded-mpv-subtitle-panel__meta {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Content layout inside each item */
+.embedded-mpv-subtitle-panel__info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.embedded-mpv-subtitle-panel__label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.embedded-mpv-subtitle-panel__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  flex-wrap: wrap;
+}
+
+/* Badges */
+.embedded-mpv-subtitle-panel__badge {
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.embedded-mpv-subtitle-panel__badge.emb {
+  background: rgba(59, 130, 246, 0.25);
+  color: #60a5fa;
+}
+
+.embedded-mpv-subtitle-panel__badge.addon {
+  background: rgba(139, 92, 246, 0.25);
+  color: #a78bfa;
+}
+
+.embedded-mpv-subtitle-panel__badge.hi {
+  background: rgba(251, 191, 36, 0.25);
+  color: #fbbf24;
+}
+
+.embedded-mpv-subtitle-panel__badge.codec {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.embedded-mpv-subtitle-panel__quality {
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.embedded-mpv-subtitle-panel__downloads,
+.embedded-mpv-subtitle-panel__rating {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.embedded-mpv-subtitle-panel__rating {
+  color: #fbbf24;
+}
+
+/* Section and language headers */
+.embedded-mpv-subtitle-panel__section {
+  margin-bottom: 8px;
+}
+
+.embedded-mpv-subtitle-panel__section-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 12px 16px 4px;
+}
+
+.embedded-mpv-subtitle-panel__lang-group {
+  margin-bottom: 4px;
+}
+
+.embedded-mpv-subtitle-panel__lang-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8b5cf6;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 16px 4px;
+}
+
+/* Loading / empty states */
+.embedded-mpv-subtitle-panel__loading,
+.embedded-mpv-subtitle-panel__empty {
+  padding: 32px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 14px;
+}
+
+/* Timing controls */
+.embedded-mpv-subtitle-panel__timing {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.embedded-mpv-subtitle-panel__timing-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.embedded-mpv-subtitle-panel__timing-value {
+  font-weight: 600;
+  color: #8b5cf6;
+  font-family: monospace;
+}
+
+.embedded-mpv-subtitle-panel__timing-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.embedded-mpv-subtitle-panel__timing-btn {
+  flex: 1;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.embedded-mpv-subtitle-panel__timing-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.embedded-mpv-subtitle-panel__timing-btn:active {
+  transform: scale(0.98);
+}

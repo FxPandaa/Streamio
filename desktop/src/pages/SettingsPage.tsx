@@ -1,13 +1,17 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useSettingsStore,
+  useSubscriptionStore,
   DebridService,
   DebridServiceKey,
   PlayerType,
 } from "../stores";
+import { useAuthStore } from "../stores/authStore";
 import { debridService } from "../services/debrid";
 import { SUBTITLE_LANGUAGES } from "../utils/subtitleLanguages";
 import { scrapers } from "../services/scraping/scrapers";
+import { useFeatureGate } from "../hooks/useFeatureGate";
+import { UpgradePrompt } from "../components/UpgradePrompt";
 import "./SettingsPage.css";
 
 // In-app scrapers grouped by category
@@ -67,7 +71,16 @@ export function SettingsPage() {
   const [validationResult, setValidationResult] = useState<
     Record<string, boolean | null>
   >({});
+  const [showDebridModal, setShowDebridModal] = useState(false);
+  const [selectedDebridService, setSelectedDebridService] =
+    useState<DebridServiceKey>("realdebrid");
   const [showScraperModal, setShowScraperModal] = useState(false);
+  const [showScraperUpgrade, setShowScraperUpgrade] = useState(false);
+  const { canUseNativeScrapers } = useFeatureGate();
+  const { subscription } = useSubscriptionStore();
+  const hasManagedTorBox =
+    subscription?.tier === "vreamio_plus" &&
+    subscription?.torbox?.status === "active";
 
   const handleApiKeyChange = (service: string, value: string) => {
     setApiKeyInputs((prev) => ({ ...prev, [service]: value }));
@@ -162,9 +175,28 @@ export function SettingsPage() {
     { id: "premiumize", name: "Premiumize", website: "https://premiumize.me" },
   ];
 
+  const configuredDebridServices = debridServices.filter((service) => {
+    const isManagedTorBox = service.id === "torbox" && hasManagedTorBox;
+    return !!debridCredentials[service.id] || isManagedTorBox;
+  });
+
+  const selectedService =
+    debridServices.find((service) => service.id === selectedDebridService) ||
+    debridServices[0];
+  const selectedIsManagedTorBox =
+    selectedService.id === "torbox" && hasManagedTorBox;
+  const selectedIsConfigured =
+    !!debridCredentials[selectedService.id] || selectedIsManagedTorBox;
+  const selectedIsActive = activeDebridService === selectedService.id;
+  const selectedIsValidating = validatingService === selectedService.id;
+  const selectedValidation = validationResult[selectedService.id];
+
   return (
     <div className="settings-page">
       <h1>Settings</h1>
+
+      {/* Subscription / Billing */}
+      <SubscriptionSection />
 
       {/* Debrid Services */}
       <section className="settings-section">
@@ -174,88 +206,151 @@ export function SettingsPage() {
           downloading.
         </p>
 
-        <div className="debrid-list">
-          {debridServices.map((service) => {
-            const isConfigured = !!debridCredentials[service.id];
-            const isActive = activeDebridService === service.id;
-            const isValidating = validatingService === service.id;
-            const validation = validationResult[service.id];
+        <div className="debrid-compact-row">
+          <div className="debrid-compact-info">
+            <label>Configured providers</label>
+            <p>
+              {configuredDebridServices.length} of {debridServices.length}{" "}
+              connected
+              {activeDebridService !== "none" && (
+                <>
+                  {" "}
+                  · Active:{" "}
+                  {debridServices.find((s) => s.id === activeDebridService)
+                    ?.name || "None"}
+                </>
+              )}
+            </p>
+          </div>
+          <button
+            className="btn btn-secondary"
+            onClick={() => setShowDebridModal(true)}
+          >
+            Configure Debrid
+          </button>
+        </div>
 
-            return (
-              <div key={service.id} className="debrid-item">
-                <div className="debrid-header">
-                  <div className="debrid-info">
-                    <h3>{service.name}</h3>
-                    <a
-                      href={service.website}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="debrid-link"
+        {configuredDebridServices.length > 0 && (
+          <div className="debrid-chip-list">
+            {configuredDebridServices.map((service) => {
+              const isManaged = service.id === "torbox" && hasManagedTorBox;
+              const isActive = activeDebridService === service.id;
+              return (
+                <span key={service.id} className="debrid-chip">
+                  {service.name}
+                  {isManaged ? " · Managed" : ""}
+                  {isActive ? " · Active" : ""}
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <div
+        className={`modal-overlay debrid-modal-overlay ${showDebridModal ? "open" : ""}`}
+        onClick={() => setShowDebridModal(false)}
+        aria-hidden={!showDebridModal}
+      >
+        <div
+          className="modal-content debrid-modal debrid-modal-content"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="modal-header">
+            <h2>Configure Debrid</h2>
+            <button
+              className="modal-close"
+              onClick={() => setShowDebridModal(false)}
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="modal-body">
+            <p className="modal-description">
+              Select a provider, paste your API key, and activate it.
+            </p>
+
+            <div className="debrid-picker-row">
+              <select
+                className="select debrid-provider-select"
+                value={selectedDebridService}
+                onChange={(e) =>
+                  setSelectedDebridService(e.target.value as DebridServiceKey)
+                }
+              >
+                {debridServices.map((service) => (
+                  <option key={service.id} value={service.id}>
+                    {service.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedIsManagedTorBox ? (
+              <div className="debrid-managed-note">
+                Managed by your Vreamio+ subscription — no API key setup needed.
+              </div>
+            ) : selectedIsConfigured ? (
+              <div className="debrid-configured">
+                <p>API key is configured for {selectedService.name}</p>
+                <div className="debrid-actions">
+                  {!selectedIsActive && (
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => setActiveDebridService(selectedService.id)}
                     >
-                      {service.website}
-                    </a>
-                  </div>
-
-                  {isConfigured && (
-                    <div className="debrid-status">
-                      {isActive && <span className="active-badge">Active</span>}
-                      <span className="configured-badge">✓ Configured</span>
-                    </div>
+                      Set as Active
+                    </button>
                   )}
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => handleRemoveApiKey(selectedService.id)}
+                  >
+                    Remove
+                  </button>
                 </div>
-
-                {isConfigured ? (
-                  <div className="debrid-configured">
-                    <p>API key is configured</p>
-                    <div className="debrid-actions">
-                      {!isActive && (
-                        <button
-                          className="btn btn-secondary"
-                          onClick={() => setActiveDebridService(service.id)}
-                        >
-                          Set as Active
-                        </button>
-                      )}
-                      <button
-                        className="btn btn-ghost"
-                        onClick={() => handleRemoveApiKey(service.id)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="debrid-setup">
-                    <div className="api-key-input">
-                      <input
-                        type="password"
-                        className="input"
-                        placeholder="Enter API key"
-                        value={apiKeyInputs[service.id] || ""}
-                        onChange={(e) =>
-                          handleApiKeyChange(service.id, e.target.value)
-                        }
-                      />
-                      <button
-                        className="btn btn-primary"
-                        onClick={() => handleSaveApiKey(service.id)}
-                        disabled={
-                          isValidating || !apiKeyInputs[service.id]?.trim()
-                        }
-                      >
-                        {isValidating ? "Validating..." : "Save"}
-                      </button>
-                    </div>
-                    {validation === false && (
-                      <p className="validation-error">Invalid API key</p>
-                    )}
-                  </div>
+              </div>
+            ) : (
+              <div className="debrid-setup">
+                <div className="api-key-input">
+                  <input
+                    type="password"
+                    className="input"
+                    placeholder={`Enter ${selectedService.name} API key`}
+                    value={apiKeyInputs[selectedService.id] || ""}
+                    onChange={(e) =>
+                      handleApiKeyChange(selectedService.id, e.target.value)
+                    }
+                  />
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => handleSaveApiKey(selectedService.id)}
+                    disabled={
+                      selectedIsValidating ||
+                      !apiKeyInputs[selectedService.id]?.trim()
+                    }
+                  >
+                    {selectedIsValidating ? "Validating..." : "Save"}
+                  </button>
+                </div>
+                {selectedValidation === false && (
+                  <p className="validation-error">Invalid API key</p>
                 )}
               </div>
-            );
-          })}
+            )}
+          </div>
+
+          <div className="modal-footer">
+            <button
+              className="btn btn-primary"
+              onClick={() => setShowDebridModal(false)}
+            >
+              Done
+            </button>
+          </div>
         </div>
-      </section>
+      </div>
 
       {/* Playback Settings */}
       <section className="settings-section">
@@ -604,29 +699,43 @@ export function SettingsPage() {
 
         <div className="setting-item">
           <div className="setting-info">
-            <label>In-App Scrapers</label>
-            <p>
-              {
-                inAppScrapers.filter((s) => enabledScrapers.includes(s.id))
-                  .length
-              }{" "}
-              of {inAppScrapers.length} scrapers enabled
-            </p>
+            <label>
+              In-App Scrapers
+              {!canUseNativeScrapers && (
+                <span className="vreamio-plus-badge">Vreamio+</span>
+              )}
+            </label>
+            {canUseNativeScrapers ? (
+              <p>
+                {
+                  inAppScrapers.filter((s) => enabledScrapers.includes(s.id))
+                    .length
+                }{" "}
+                of {inAppScrapers.length} scrapers enabled
+              </p>
+            ) : (
+              <p>Unlock {inAppScrapers.length} in-app scrapers with Vreamio+</p>
+            )}
           </div>
           <button
             className="btn btn-secondary"
-            onClick={() => setShowScraperModal(true)}
+            onClick={() =>
+              canUseNativeScrapers
+                ? setShowScraperModal(true)
+                : setShowScraperUpgrade(true)
+            }
           >
-            Manage Scrapers
+            {canUseNativeScrapers ? "Manage Scrapers" : "🔒 Upgrade"}
           </button>
         </div>
 
         <div className="setting-item">
           <div className="setting-info">
-            <label>Use Torrentio as Backup</label>
+            <label>Torrentio Addon</label>
             <p>
-              Enable Torrentio addon as fallback when in-app scrapers don't find
-              results
+              {canUseNativeScrapers
+                ? "Use Torrentio as a backup when in-app scrapers don't find results"
+                : "Torrentio searches torrent sources via addon"}
             </p>
           </div>
           <button
@@ -662,6 +771,14 @@ export function SettingsPage() {
           Reset All Settings
         </button>
       </section>
+
+      {/* Scraper Upgrade Prompt */}
+      {showScraperUpgrade && (
+        <UpgradePrompt
+          feature="native_scrapers"
+          onClose={() => setShowScraperUpgrade(false)}
+        />
+      )}
 
       {/* Scraper Modal */}
       {showScraperModal && (
@@ -742,5 +859,211 @@ export function SettingsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ============================================================================
+// SUBSCRIPTION SECTION
+// ============================================================================
+
+function SubscriptionSection() {
+  const { isAuthenticated } = useAuthStore();
+  const {
+    subscription,
+    isLoading,
+    error,
+    checkoutLoading,
+    fetchStatus,
+    startCheckout,
+    openPortal,
+    refreshTorBox,
+    clearError,
+  } = useSubscriptionStore();
+
+  const isPaid = subscription?.tier === "vreamio_plus";
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchStatus();
+    }
+  }, [isAuthenticated, fetchStatus]);
+
+  if (!isAuthenticated) {
+    return (
+      <section className="settings-section">
+        <h2>Subscription</h2>
+        <p className="section-description">
+          Log in to manage your Vreamio subscription and TorBox access.
+        </p>
+      </section>
+    );
+  }
+
+  const status = subscription?.status ?? "not_subscribed";
+
+  const statusLabels: Record<string, { label: string; color: string }> = {
+    not_subscribed: { label: "No Subscription", color: "#888" },
+    paid_pending_provision: { label: "Setting Up...", color: "#f5a623" },
+    provisioned_pending_confirm: {
+      label: "Check Your Email",
+      color: "#f5a623",
+    },
+    active: { label: "Active", color: "#4caf50" },
+    past_due: { label: "Past Due", color: "#f44336" },
+    canceled: { label: "Canceled", color: "#f44336" },
+    expired: { label: "Expired", color: "#888" },
+  };
+
+  const statusInfo = statusLabels[status] ?? statusLabels.not_subscribed;
+
+  const handleCheckout = async () => {
+    const url = await startCheckout();
+    if (url) {
+      window.open(url, "_blank");
+    }
+  };
+
+  const handlePortal = async () => {
+    const url = await openPortal();
+    if (url && url !== "#mock-portal") {
+      window.open(url, "_blank");
+    }
+  };
+
+  const handleRefreshTorBox = async () => {
+    const confirmed = await refreshTorBox();
+    if (confirmed) {
+      fetchStatus();
+    }
+  };
+
+  return (
+    <section className="settings-section">
+      <h2>Subscription</h2>
+
+      {/* Tier Badge */}
+      <div className="tier-display">
+        <span className={`tier-badge ${isPaid ? "tier-plus" : "tier-free"}`}>
+          {isPaid ? "Vreamio+" : "Vreamio Free"}
+        </span>
+        {isPaid && subscription?.currentPeriodEnd && (
+          <span className="tier-renews">
+            Renews{" "}
+            {new Date(subscription.currentPeriodEnd).toLocaleDateString()}
+          </span>
+        )}
+        {subscription?.cancelAtPeriodEnd && (
+          <span className="tier-canceling">Cancels at end of period</span>
+        )}
+      </div>
+
+      {error && (
+        <div className="subscription-error">
+          <span>{error}</span>
+          <button className="btn btn-ghost" onClick={clearError}>
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Feature comparison */}
+      <div className="tier-features">
+        <div className="tier-feature">
+          <span className="tier-feature-icon">✅</span>
+          <span>Stream any movie or show</span>
+        </div>
+        <div className="tier-feature">
+          <span className="tier-feature-icon">✅</span>
+          <span>BYO debrid (Real-Debrid, AllDebrid, TorBox, Premiumize)</span>
+        </div>
+        <div className="tier-feature">
+          <span className="tier-feature-icon">✅</span>
+          <span>Torrentio addon scraper</span>
+        </div>
+        <div className="tier-feature">
+          <span className="tier-feature-icon">✅</span>
+          <span>Built-in player, subtitles, library & sync</span>
+        </div>
+        <div className={`tier-feature ${!isPaid ? "tier-feature-locked" : ""}`}>
+          <span className="tier-feature-icon">{isPaid ? "✅" : "🔒"}</span>
+          <span>11 native scrapers (zero-downtime)</span>
+          {!isPaid && <span className="vreamio-plus-badge">Vreamio+</span>}
+        </div>
+        <div className={`tier-feature ${!isPaid ? "tier-feature-locked" : ""}`}>
+          <span className="tier-feature-icon">{isPaid ? "✅" : "🔒"}</span>
+          <span>Family profiles</span>
+          {!isPaid && <span className="vreamio-plus-badge">Vreamio+</span>}
+        </div>
+        <div className={`tier-feature ${!isPaid ? "tier-feature-locked" : ""}`}>
+          <span className="tier-feature-icon">{isPaid ? "✅" : "🔒"}</span>
+          <span>Managed TorBox (zero-setup streaming)</span>
+          {!isPaid && <span className="vreamio-plus-badge">Vreamio+</span>}
+        </div>
+      </div>
+
+      {/* TorBox details (paid only) */}
+      {isPaid && subscription?.torbox.email && (
+        <div className="subscription-card">
+          <div className="subscription-status-row">
+            <span className="subscription-label">TorBox Account</span>
+            <span className="subscription-value">
+              {subscription.torbox.email}
+            </span>
+          </div>
+          {subscription.torbox.status && (
+            <div className="subscription-status-row">
+              <span className="subscription-label">TorBox Status</span>
+              <span className="subscription-value">
+                {subscription.torbox.status === "active"
+                  ? "✅ Connected"
+                  : subscription.torbox.status === "pending_email_confirm"
+                    ? "📧 Awaiting email confirmation"
+                    : subscription.torbox.status === "pending_provision"
+                      ? "⏳ Setting up..."
+                      : "❌ Revoked"}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="subscription-actions">
+        {status === "not_subscribed" ||
+        status === "canceled" ||
+        status === "expired" ? (
+          <button
+            className="btn btn-primary"
+            onClick={handleCheckout}
+            disabled={checkoutLoading}
+          >
+            {checkoutLoading ? "Starting..." : "Upgrade to Vreamio+"}
+          </button>
+        ) : null}
+
+        {status === "active" || status === "past_due" ? (
+          <button className="btn btn-secondary" onClick={handlePortal}>
+            Manage Subscription
+          </button>
+        ) : null}
+
+        {status === "provisioned_pending_confirm" ? (
+          <button
+            className="btn btn-secondary"
+            onClick={handleRefreshTorBox}
+            disabled={isLoading}
+          >
+            {isLoading ? "Checking..." : "I've Confirmed My Email"}
+          </button>
+        ) : null}
+
+        {status === "paid_pending_provision" && (
+          <p className="subscription-hint">
+            We're setting up your TorBox account. This usually takes less than a
+            minute.
+          </p>
+        )}
+      </div>
+    </section>
   );
 }

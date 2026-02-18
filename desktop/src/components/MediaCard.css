@@ -177,3 +177,175 @@
 .media-card-large .media-card-title {
   font-size: 16px;
 }
+
+/* ===== Landscape variant ===== */
+.media-card-landscape {
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  color: inherit;
+  transition: transform var(--transition-spring);
+}
+
+.media-card-landscape:hover {
+  transform: translateY(-8px) scale(1.02);
+}
+
+.media-card-landscape-image {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16/9;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: linear-gradient(
+    135deg,
+    var(--bg-tertiary) 0%,
+    var(--bg-secondary) 100%
+  );
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-normal);
+}
+
+.media-card-landscape:hover .media-card-landscape-image {
+  box-shadow: var(--shadow-lg);
+}
+
+.media-card-landscape-image > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform var(--transition-slow);
+}
+
+.media-card-landscape:hover .media-card-landscape-image > img {
+  transform: scale(1.05);
+}
+
+.media-card-landscape-gradient {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0.85) 0%,
+      rgba(0, 0, 0, 0.3) 40%,
+      transparent 70%
+    ),
+    linear-gradient(to right, rgba(0, 0, 0, 0.2) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+.media-card-logo {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.media-card-logo img {
+  max-width: 75%;
+  max-height: 48px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.8));
+}
+
+.media-card-logo-text {
+  position: absolute;
+  bottom: 12px;
+  left: 14px;
+  right: 14px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.media-card-logo-text h3 {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+  color: #ffffff;
+}
+
+.media-card-landscape .media-card-overlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at center,
+    rgba(0, 0, 0, 0.3) 0%,
+    rgba(0, 0, 0, 0.5) 100%
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+  z-index: 2;
+}
+
+.media-card-landscape:hover .media-card-overlay {
+  opacity: 1;
+}
+
+.media-card-landscape .media-card-rating {
+  z-index: 2;
+}
+
+.media-card-landscape-meta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 10px 4px 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.media-card-landscape-meta .type {
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.media-card-landscape-meta .dot {
+  opacity: 0.4;
+  font-size: 8px;
+}
+
+/* Landscape size variants */
+.media-card-landscape-small {
+  width: 220px;
+  flex-shrink: 0;
+}
+
+.media-card-landscape-small .media-card-logo img {
+  max-height: 36px;
+}
+
+.media-card-landscape-medium {
+  width: 300px;
+  flex-shrink: 0;
+}
+
+.media-card-landscape-large {
+  width: 380px;
+  flex-shrink: 0;
+}
+
+.media-card-landscape-large .media-card-landscape-image {
+  border-radius: var(--radius-xl);
+}
+
+.media-card-landscape-large .media-card-logo img {
+  max-height: 56px;
+}
+
+.media-card-landscape-large .media-card-logo-text h3 {
+  font-size: 18px;
+}

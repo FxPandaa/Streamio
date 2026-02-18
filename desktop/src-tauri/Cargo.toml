@@ -1,12 +1,12 @@
 [package]
-name = "streamio"
+name = "vreamio"
 version = "1.0.0"
-description = "Streamio Desktop - Cross-platform streaming app"
-authors = ["Streamio"]
+description = "Vreamio Desktop - Cross-platform streaming app"
+authors = ["Vreamio"]
 edition = "2021"
 
 [lib]
-name = "streamio_lib"
+name = "vreamio_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]

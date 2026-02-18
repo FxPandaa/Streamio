@@ -62,7 +62,7 @@ export async function checkDebridSafety(): Promise<SafetyCheckResult> {
       isKeyValidated: false,
       debridService: null,
       error:
-        "No debrid service configured. Please add a Real-Debrid or AllDebrid API key in settings.",
+        "No debrid service configured. Please add your API key in settings.",
     };
   }
 
@@ -155,11 +155,19 @@ export function getDebridSetupMessage(): string {
   const settings = useSettingsStore.getState();
 
   if (settings.activeDebridService === "none") {
-    return "To stream content, you need a debrid service like Real-Debrid. This converts torrents to fast HTTPS streams without P2P.\n\nPlease add your Real-Debrid or AllDebrid API key in Settings.";
+    return "To stream content, you need a debrid service like Real-Debrid, AllDebrid, TorBox, or Premiumize. This converts torrents to fast HTTPS streams without P2P.\n\nPlease add your API key in Settings.";
   }
 
   if (!settings.getActiveApiKey()) {
-    return `Please add your ${settings.activeDebridService === "realdebrid" ? "Real-Debrid" : "AllDebrid"} API key in Settings to start streaming.`;
+    const nameMap: Record<string, string> = {
+      realdebrid: "Real-Debrid",
+      alldebrid: "AllDebrid",
+      torbox: "TorBox",
+      premiumize: "Premiumize",
+    };
+    const serviceName =
+      nameMap[settings.activeDebridService] || settings.activeDebridService;
+    return `Please add your ${serviceName} API key in Settings to start streaming.`;
   }
 
   return "Debrid configuration error. Please check your settings.";

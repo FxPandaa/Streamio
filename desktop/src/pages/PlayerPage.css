@@ -5,6 +5,15 @@
   z-index: 1000;
 }
 
+/* Hide cursor when controls are hidden (built-in player) */
+.player-page.cursor-hidden {
+  cursor: none !important;
+}
+
+.player-page.cursor-hidden * {
+  cursor: none !important;
+}
+
 /* When embedded MPV is active, make the page background transparent */
 .player-page:has(.embedded-mpv-player) {
   background: transparent;

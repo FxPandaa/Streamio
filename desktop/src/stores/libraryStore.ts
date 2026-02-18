@@ -64,13 +64,27 @@ export type LibraryFilter =
   | "watchlist";
 export type LibrarySortBy = "recent" | "title" | "year" | "rating" | "runtime";
 
+interface ProfileLibraryData {
+  library: LibraryItem[];
+  watchHistory: WatchHistoryItem[];
+  collections: LibraryCollection[];
+}
+
 interface LibraryState {
+  // Active profile's data (what consumers read/write)
   library: LibraryItem[];
   watchHistory: WatchHistoryItem[];
   collections: LibraryCollection[];
   isLoading: boolean;
   isSyncing: boolean;
   lastSyncAt: string | null;
+
+  // Per-profile storage
+  profileData: Record<string, ProfileLibraryData>;
+  currentProfileId: string | null;
+
+  // Profile switching
+  switchProfile: (profileId: string | null) => void;
 
   // Filter/Sort state
   activeFilter: LibraryFilter;
@@ -130,6 +144,48 @@ export const useLibraryStore = create<LibraryState>()(
       activeFilter: "all",
       sortBy: "recent",
       searchQuery: "",
+      profileData: {},
+      currentProfileId: null,
+
+      switchProfile: (profileId: string | null) => {
+        const state = get();
+        const prevId = state.currentProfileId;
+
+        // Save current data to previous profile (if any)
+        if (prevId) {
+          const currentData: ProfileLibraryData = {
+            library: state.library,
+            watchHistory: state.watchHistory,
+            collections: state.collections,
+          };
+
+          set((s) => ({
+            profileData: {
+              ...s.profileData,
+              [prevId]: currentData,
+            },
+          }));
+        }
+
+        // Load data for new profile (or empty if first time)
+        const newData = profileId
+          ? state.profileData[profileId] || {
+              library: [],
+              watchHistory: [],
+              collections: [],
+            }
+          : { library: [], watchHistory: [], collections: [] };
+
+        set({
+          currentProfileId: profileId,
+          library: newData.library,
+          watchHistory: newData.watchHistory,
+          collections: newData.collections,
+          activeFilter: "all",
+          sortBy: "recent",
+          searchQuery: "",
+        });
+      },
 
       addToLibrary: (item) => {
         const newItem: LibraryItem = {
@@ -425,15 +481,17 @@ export const useLibraryStore = create<LibraryState>()(
 
         set({ isSyncing: true });
 
+        const profileId = state.currentProfileId;
+
         try {
-          // Use the new sync endpoints
+          // Use the sync endpoints, scoped by profileId
           await fetch(`${API_URL}/sync/library`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${authState.token}`,
             },
-            body: JSON.stringify({ library: state.library }),
+            body: JSON.stringify({ profileId, library: state.library }),
           });
 
           await fetch(`${API_URL}/sync/history`, {
@@ -442,7 +500,7 @@ export const useLibraryStore = create<LibraryState>()(
               "Content-Type": "application/json",
               Authorization: `Bearer ${authState.token}`,
             },
-            body: JSON.stringify({ history: state.watchHistory }),
+            body: JSON.stringify({ profileId, history: state.watchHistory }),
           });
 
           await fetch(`${API_URL}/sync/collections`, {
@@ -451,7 +509,7 @@ export const useLibraryStore = create<LibraryState>()(
               "Content-Type": "application/json",
               Authorization: `Bearer ${authState.token}`,
             },
-            body: JSON.stringify({ collections: state.collections }),
+            body: JSON.stringify({ profileId, collections: state.collections }),
           });
 
           set({ lastSyncAt: new Date().toISOString() });
@@ -468,9 +526,14 @@ export const useLibraryStore = create<LibraryState>()(
 
         set({ isLoading: true });
 
+        const profileId = get().currentProfileId;
+        const profileQuery = profileId
+          ? `?profileId=${encodeURIComponent(profileId)}`
+          : "";
+
         try {
-          // Use the new sync/all endpoint to load everything at once
-          const res = await fetch(`${API_URL}/sync/all`, {
+          // Use the sync/all endpoint to load everything at once
+          const res = await fetch(`${API_URL}/sync/all${profileQuery}`, {
             headers: {
               Authorization: `Bearer ${authState.token}`,
             },
@@ -493,12 +556,14 @@ export const useLibraryStore = create<LibraryState>()(
       },
     }),
     {
-      name: "streamio-library",
+      name: "vreamio-library",
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         library: state.library,
         watchHistory: state.watchHistory,
         collections: state.collections,
+        profileData: state.profileData,
+        currentProfileId: state.currentProfileId,
         activeFilter: state.activeFilter,
         sortBy: state.sortBy,
         lastSyncAt: state.lastSyncAt,

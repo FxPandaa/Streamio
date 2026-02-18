@@ -1,7 +1,7 @@
 {
-  "name": "streamio-desktop",
+  "name": "vreamio-desktop",
   "version": "1.0.0",
-  "description": "Streamio Desktop - Cross-platform streaming app",
+  "description": "Vreamio Desktop - Cross-platform streaming app",
   "type": "module",
   "scripts": {
     "dev": "vite",

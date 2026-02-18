@@ -1,5 +1,5 @@
 /**
- * Streamio API - Error Handling Utilities
+ * Vreamio API - Error Handling Utilities
  * Custom error classes for the account sync backend
  */
 

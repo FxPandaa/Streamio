@@ -1,5 +1,5 @@
 /**
- * Streamio API - User Routes
+ * Vreamio API - User Routes
  * Handles user profile and preferences (synced across devices)
  */
 

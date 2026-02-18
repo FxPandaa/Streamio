@@ -1,5 +1,5 @@
 /**
- * Streamio API - Authentication Routes
+ * Vreamio API - Authentication Routes
  * Handles user registration, login, and token refresh
  */
 

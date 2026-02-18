@@ -1,5 +1,5 @@
 /**
- * Streamio API - Metadata Routes
+ * Vreamio API - Metadata Routes
  * Proxy to Cinemeta API with caching
  */
 

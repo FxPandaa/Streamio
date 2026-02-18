@@ -1,5 +1,5 @@
 /**
- * Streamio API - Services Index
+ * Vreamio API - Services Index
  * Export all service modules
  */
 

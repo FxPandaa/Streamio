@@ -6,6 +6,8 @@ export interface Scraper {
   id: string;
   name: string;
   tier: number;
+  /** "native" = built-in scraper (Vreamio+ only), "addon" = external addon (free) */
+  type: "native" | "addon";
   region?: string;
   specialty?: "anime" | "movies" | "series" | "general";
   search(query: MediaQuery): Promise<TorrentResult[]>;
@@ -99,6 +101,7 @@ class TorrentioScraper implements Scraper {
   id = "torrentio";
   name = "Torrentio";
   tier = 4; // Backup only
+  type = "addon" as const;
   specialty = "general" as const;
 
   private baseUrl = "https://torrentio.strem.fun";
@@ -123,7 +126,7 @@ class TorrentioScraper implements Scraper {
       const response = await tauriFetch(url, {
         method: "GET",
         headers: {
-          "User-Agent": "Streamio/1.0",
+          "User-Agent": "Vreamio/1.0",
         },
       });
 
@@ -224,6 +227,7 @@ class YTSScraper implements Scraper {
   id = "yts";
   name = "YTS";
   tier = 1;
+  type = "native" as const;
   specialty = "movies" as const;
 
   private mirrors = ["https://yts.mx", "https://yts.lt", "https://yts.am"];
@@ -280,6 +284,7 @@ class EZTVScraper implements Scraper {
   id = "eztv";
   name = "EZTV";
   tier = 1;
+  type = "native" as const;
   specialty = "series" as const;
 
   private mirrors = ["https://eztvx.to", "https://eztv.re", "https://eztv.tf"];
@@ -342,6 +347,7 @@ class The1337xScraper implements Scraper {
   id = "1337x";
   name = "1337x";
   tier = 1;
+  type = "native" as const;
   specialty = "general" as const;
 
   private mirrors = [
@@ -413,6 +419,7 @@ class TPBScraper implements Scraper {
   id = "tpb";
   name = "The Pirate Bay";
   tier = 1;
+  type = "native" as const;
   specialty = "general" as const;
 
   // Use apibay.org which is the working API
@@ -431,7 +438,7 @@ class TPBScraper implements Scraper {
       const response = await tauriFetch(url, {
         method: "GET",
         headers: {
-          "User-Agent": "Streamio/1.0",
+          "User-Agent": "Vreamio/1.0",
         },
       });
 
@@ -482,6 +489,7 @@ class LimeTorrentsScraper implements Scraper {
   id = "limetorrents";
   name = "LimeTorrents";
   tier = 2;
+  type = "native" as const;
   specialty = "general" as const;
 
   private mirrors = [
@@ -608,6 +616,7 @@ class BitSearchScraper implements Scraper {
   id = "bitsearch";
   name = "BitSearch";
   tier = 2;
+  type = "native" as const;
   specialty = "general" as const;
 
   private baseUrl = "https://bitsearch.to";
@@ -714,6 +723,7 @@ class SolidTorrentsWorkingScraper implements Scraper {
   id = "solidtorrents";
   name = "BitSearch";
   tier = 2;
+  type = "native" as const;
   specialty = "general" as const;
 
   private baseUrl = "https://bitsearch.to";
@@ -732,7 +742,7 @@ class SolidTorrentsWorkingScraper implements Scraper {
       const response = await tauriFetch(url, {
         method: "GET",
         headers: {
-          "User-Agent": "Streamio/1.0",
+          "User-Agent": "Vreamio/1.0",
           Accept: "application/json",
         },
       });
@@ -774,6 +784,7 @@ class AniDexScraper implements Scraper {
   id = "anidex";
   name = "AniDex";
   tier = 2;
+  type = "native" as const;
   specialty = "anime" as const;
 
   private baseUrl = "https://anidex.info";
@@ -850,6 +861,7 @@ class TorrentGalaxyScraper implements Scraper {
   id = "torrentgalaxy";
   name = "TorrentGalaxy";
   tier = 2;
+  type = "native" as const;
   specialty = "general" as const;
 
   // Updated mirrors - torrentgalaxy.to is the most reliable
@@ -1094,6 +1106,7 @@ class RutorScraper implements Scraper {
   id = "rutor";
   name = "Rutor";
   tier = 2;
+  type = "native" as const;
   specialty = "general" as const;
 
   private baseUrl = "https://rutor.info";
@@ -1110,7 +1123,7 @@ class RutorScraper implements Scraper {
 
       const response = await tauriFetch(url, {
         method: "GET",
-        headers: { "User-Agent": "Streamio/1.0" },
+        headers: { "User-Agent": "Vreamio/1.0" },
       });
 
       if (!response.ok) return [];
@@ -1194,6 +1207,7 @@ class NyaaScraper implements Scraper {
   id = "nyaa";
   name = "Nyaa";
   tier = 2;
+  type = "native" as const;
   specialty = "anime" as const;
 
   private baseUrl = "https://nyaa.si";

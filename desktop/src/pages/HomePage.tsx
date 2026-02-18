@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { HeroBanner, MediaRow, ContinueWatching } from "../components";
 import { cinemetaService, MediaItem } from "../services";
 import { useLibraryStore } from "../stores";
@@ -6,13 +6,24 @@ import "./HomePage.css";
 
 export function HomePage() {
   const [isLoading, setIsLoading] = useState(true);
-  const [featured, setFeatured] = useState<MediaItem | null>(null);
   const [popularMovies, setPopularMovies] = useState<MediaItem[]>([]);
   const [popularSeries, setPopularSeries] = useState<MediaItem[]>([]);
   const [topRatedMovies, setTopRatedMovies] = useState<MediaItem[]>([]);
   const [topRatedSeries, setTopRatedSeries] = useState<MediaItem[]>([]);
 
   const { watchHistory } = useLibraryStore();
+
+  // Build the top 10 featured items from popular movies + series
+  const featuredItems = useMemo(() => {
+    const combined: MediaItem[] = [];
+    // Interleave movies and series for variety
+    const maxEach = 5;
+    for (let i = 0; i < maxEach; i++) {
+      if (popularMovies[i]) combined.push(popularMovies[i]);
+      if (popularSeries[i]) combined.push(popularSeries[i]);
+    }
+    return combined.slice(0, 10);
+  }, [popularMovies, popularSeries]);
 
   useEffect(() => {
     loadContent();
@@ -38,14 +49,6 @@ export function HomePage() {
       setPopularSeries(popularSeriesData);
       setTopRatedMovies(topRatedMoviesData);
       setTopRatedSeries(topRatedSeriesData);
-
-      // Set random popular movie as featured
-      if (popularMoviesData.length > 0) {
-        const randomIndex = Math.floor(
-          Math.random() * Math.min(5, popularMoviesData.length),
-        );
-        setFeatured(popularMoviesData[randomIndex]);
-      }
     } catch (error) {
       console.error("Failed to load content:", error);
     } finally {
@@ -55,7 +58,7 @@ export function HomePage() {
 
   return (
     <div className="home-page">
-      <HeroBanner item={featured} isLoading={isLoading} />
+      <HeroBanner items={featuredItems} isLoading={isLoading} />
 
       <div className="content-rows">
         {/* Continue Watching - only show if there's history */}

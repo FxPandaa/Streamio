@@ -1,5 +1,5 @@
 /**
- * Streamio API - Authentication Middleware
+ * Vreamio API - Authentication Middleware
  * JWT verification and request authentication
  */
 

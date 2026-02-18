@@ -8,6 +8,7 @@ interface SubtitleSelectorProps {
   onSelect: (subtitle: Subtitle | null) => void;
   onTimingAdjust: (offset: number) => void;
   currentOffset: number;
+  activeSource?: "embedded" | "addon" | null;
 }
 
 export function SubtitleSelector({
@@ -16,6 +17,7 @@ export function SubtitleSelector({
   onSelect,
   onTimingAdjust,
   currentOffset,
+  activeSource = null,
 }: SubtitleSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [timingOffset, setTimingOffset] = useState(currentOffset);
@@ -58,9 +60,7 @@ export function SubtitleSelector({
       >
         <span className="subtitle-icon">CC</span>
         <span className="subtitle-status">
-          {activeSubtitle
-            ? activeSubtitle.language.slice(0, 3).toUpperCase()
-            : "OFF"}
+          {activeSource === "embedded" ? "EMB" : activeSubtitle ? "ADD" : "OFF"}
         </span>
       </button>
     );
@@ -105,6 +105,7 @@ export function SubtitleSelector({
                 <div className="subtitle-info">
                   <span className="subtitle-filename">{subtitle.language}</span>
                   <div className="subtitle-meta">
+                    <span className="subtitle-badge">ADDON</span>
                     {subtitle.hearing_impaired && (
                       <span className="subtitle-badge">HI</span>
                     )}
